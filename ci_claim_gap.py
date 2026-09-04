@@ -60,6 +60,11 @@ URUCHAMIA_TESTY = re.compile(
     # dodalo zadania na Windows i macOS wolajace `bun run check:ci` i wzorzec
     # szukajacy `bun test` uznal je za zadania bez testow.
     r"|\b(?:bun|npm|yarn|pnpm|deno)\s+run\s+[\w.:-]*(?:test|check)[\w.:-]*"
+    # Task runner z nazwanym zadaniem: `poe --directory ./x test-windows`.
+    # Microsoft autogen ma zadanie `test-autogen-ext-pwsh` na windows-latest,
+    # ktore wolalo `poe ... test-windows` - zgloszone jako luka platformy
+    # w zadaniu, ktore ma slowo "test" nawet w nazwie.
+    r"|\b(?:poe|invoke|inv|task|nox|tox)\b[^|;&]*?\s(?:test|check)[\w.:-]*"
     # Nazwa pliku zawierajaca `test`/`check`, ale poprzedzona nie-litera - inaczej
     # `latest.py` liczyloby sie jako testy, a `run_tests.py` by przepadlo.
     r"|[\w./-]*(?:^|[^A-Za-z])(?:test|check)[\w-]*\.(?:sh|bat|ps1|py)\b"

@@ -231,3 +231,25 @@ def test_skrypt_pakietu_niezwiazany_z_testami_nie_liczy_sie():
     ):
         kroki, _ = cg._kroki_testowe_w(polecenie)
         assert not kroki, f"blednie uznane za test: {polecenie}"
+
+
+# --- korekta 6: task runner z nazwanym zadaniem ------------------------------
+
+def test_task_runner_z_nazwanym_zadaniem_liczy_sie():
+    """microsoft/autogen ma zadanie `test-autogen-ext-pwsh` na windows-latest,
+    ktorego krok to `poe --directory ./packages/autogen-ext test-windows`.
+    Zostalo zgloszone jako luka platformy - w zadaniu ze slowem test w nazwie."""
+    for polecenie in (
+        "run: poe --directory ./packages/autogen-ext test-windows",
+        "run: invoke test",
+        "run: nox -s tests",
+        "run: tox -e check",
+    ):
+        kroki, _ = cg._kroki_testowe_w(polecenie)
+        assert kroki, f"nie rozpoznano jako testu: {polecenie}"
+
+
+def test_task_runner_bez_zadania_testowego_nie_liczy_sie():
+    for polecenie in ("run: poe build", "run: invoke docs", "run: task deploy"):
+        kroki, _ = cg._kroki_testowe_w(polecenie)
+        assert not kroki, f"blednie uznane za test: {polecenie}"
