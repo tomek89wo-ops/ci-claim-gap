@@ -59,6 +59,8 @@ of what it got wrong rather than a restatement of what the code does.
 | `python -m pytest` as a marker filter | `-m` belonged to `python`, not `pytest` | A filter flag only counts after the tool name |
 | NVIDIA NeMo-Guardrails as untested on Windows and macOS | Steps live in `_test.yml` behind a `uses:` call | Resolve local `uses:` targets before judging |
 | FastAPI and Typer as untested on Windows and macOS | Their test step is `bash scripts/test-cov.sh` | Recognise script and `make` targets as test runners |
+| cc-safety-net's platform gap as still open, on the day it was closed | The new jobs call `bun run check:ci` | Recognise package scripts as test runners |
+| microsoft/autogen as untested on Windows, in a job named `test-autogen-ext-pwsh` | Its step is `poe ... test-windows` | Recognise task runners with named tasks |
 
 The last two matter most. A tool that accuses a project of skipping tests
 when that project is doing it correctly is worse than no tool, because it costs
@@ -68,10 +70,10 @@ A platform is therefore only reported as a gap when **no job in the repository**
 tests on it. A build-only job is not an accusation when another workflow covers
 the same OS.
 
-Validated against roughly twenty widely-used repositories. ruff, uv, black,
-poetry, pre-commit, scrapy, FastAPI, Typer and NeMo-Guardrails all come back
-clean, which is the result that matters: a tool that finds something everywhere
-is finding nothing.
+Validated against 25 widely-used repositories — see [SURVEY.md](SURVEY.md).
+Fifteen come back completely clean, and most of the remaining ten are describing
+deliberate configuration rather than a defect. That is the result that matters:
+a tool that finds something everywhere is finding nothing.
 
 ## A second check: tests that assert wiring instead of behaviour
 
