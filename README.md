@@ -58,14 +58,20 @@ of what it got wrong rather than a restatement of what the code does.
 | "No Windows testing" after reading `ci.yml` | A separate `test-windows.yml` existed | Enumerate every workflow file, never one |
 | `python -m pytest` as a marker filter | `-m` belonged to `python`, not `pytest` | A filter flag only counts after the tool name |
 | NVIDIA NeMo-Guardrails as untested on Windows and macOS | Steps live in `_test.yml` behind a `uses:` call | Resolve local `uses:` targets before judging |
+| FastAPI and Typer as untested on Windows and macOS | Their test step is `bash scripts/test-cov.sh` | Recognise script and `make` targets as test runners |
 
-The third one matters most. A tool that accuses a project of skipping tests
+The last two matter most. A tool that accuses a project of skipping tests
 when that project is doing it correctly is worse than no tool, because it costs
 the reader the one thing it was supposed to save: trust in the report.
 
 A platform is therefore only reported as a gap when **no job in the repository**
 tests on it. A build-only job is not an accusation when another workflow covers
 the same OS.
+
+Validated against roughly twenty widely-used repositories. ruff, uv, black,
+poetry, pre-commit, scrapy, FastAPI, Typer and NeMo-Guardrails all come back
+clean, which is the result that matters: a tool that finds something everywhere
+is finding nothing.
 
 ## Why these two checks
 

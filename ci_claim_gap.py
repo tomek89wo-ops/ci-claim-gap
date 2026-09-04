@@ -45,12 +45,21 @@ from dataclasses import dataclass, field
 API = "https://api.github.com"
 
 # A step that plausibly executes a test suite.
+#
+# The script and make forms matter as much as the tool names. FastAPI and Typer
+# were both reported as untested on Windows and macOS because their test step is
+# `bash scripts/test-cov.sh` - a runner this pattern did not recognise, in a job
+# named `test`.
 URUCHAMIA_TESTY = re.compile(
-    r"\b("
-    r"pytest|bun\s+test|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|"
+    r"("
+    r"\b(?:pytest|bun\s+test|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|"
     r"go\s+test|cargo\s+test|dotnet\s+test|mvn\s+test|gradle\s+test|"
-    r"jest|vitest|mocha|tox|nox|unittest|rspec|phpunit|ctest"
-    r")\b",
+    r"jest|vitest|mocha|tox|nox|unittest|rspec|phpunit|ctest)\b"
+    r"|\b(?:make|just|hatch\s+run|rake)\s+(?:test|check)\w*\b"
+    # Nazwa pliku zawierajaca `test`/`check`, ale poprzedzona nie-litera - inaczej
+    # `latest.py` liczyloby sie jako testy, a `run_tests.py` by przepadlo.
+    r"|[\w./-]*(?:^|[^A-Za-z])(?:test|check)[\w-]*\.(?:sh|bat|ps1|py)\b"
+    r")",
     re.I,
 )
 

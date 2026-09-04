@@ -177,3 +177,31 @@ def test_repozytorium_bez_workflowow_zwraca_blad_nie_wyjatek(monkeypatch):
     monkeypatch.setattr(cg, "_pobierz", lambda *a, **k: {"message": "Not Found"})
     w = cg.zbadaj("fikcyjny/repo", token=None)
     assert "blad" in w
+
+
+# --- korekta 4: testy uruchamiane przez skrypt lub make ---------------------
+
+def test_skrypt_testowy_liczy_sie_jako_uruchomienie_testow():
+    """FastAPI i Typer zostaly zgloszone jako nietestowane na Windows i macOS,
+    bo ich krok to `bash scripts/test-cov.sh` w zadaniu nazwanym `test`."""
+    for polecenie in (
+        "run: uv run --no-sync bash scripts/test-cov.sh $PYTEST_OPTIONS",
+        "run: ./scripts/test.sh",
+        "run: make test",
+        "run: just check",
+        "run: python scripts/run_tests.py",
+    ):
+        kroki, _ = cg._kroki_testowe_w(polecenie)
+        assert kroki, f"nie rozpoznano jako testu: {polecenie}"
+
+
+def test_zwykly_skrypt_budujacy_nie_jest_testem():
+    for polecenie in ("run: bash scripts/build.sh", "run: make docs", "run: ./deploy.sh"):
+        kroki, _ = cg._kroki_testowe_w(polecenie)
+        assert not kroki, f"blednie uznane za test: {polecenie}"
+
+
+def test_latest_py_nie_jest_testem():
+    """`latest.py` zawiera litery `test`. Wzorzec wymaga nie-litery przed nimi."""
+    kroki, _ = cg._kroki_testowe_w("run: python scripts/latest.py")
+    assert not kroki
