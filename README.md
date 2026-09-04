@@ -101,9 +101,35 @@ result is. Run against this repository's own tests — which use
 `monkeypatch.setattr` seven times across tests with two or more patches — it
 reports nothing, because every one of them asserts on a value.
 
+## A third check: issues closed as completed whose criterion is absent
+
+```
+python closed_but_absent.py owner/repo [--limit 60]
+```
+
+A closed issue is a claim that something was done. When the issue names a file
+and a thing that should be in it, the claim is checkable in one request.
+
+From `microsoft/agent-governance-toolkit` #310, "test: add Windows compatibility
+tests to CI", closed as `completed` on 2026-04-01:
+
+> Add `windows-latest` to the test matrix in `.github/workflows/ci.yml`
+
+Five months later that file contained no occurrence of `windows-latest`, and in
+the interim a bug was filed describing exactly the failure a Windows runner is
+meant to catch. The issue had no comments, no linked pull request and no
+referencing commit.
+
+The check reads sentences that **prescribe** rather than describe. That
+distinction is the whole check: its first version reported three sentences from
+another repository of the form "`hooks/hooks.json` runs `npx -y cc-safety-net`",
+which state what the environment does rather than promise what a file will
+contain. A sentence now qualifies only if it is a checklist item or opens with a
+prescriptive verb.
+
 ## Why these checks
 
-All three come from the same shape: a mechanism that has to be remembered rather
+All of them come from the same shape: a mechanism that has to be remembered rather
 than enforced. A Windows runner that builds but does not test, and a test lane that
 only runs tagged tests, are both arrangements where the default is silence.
 Nothing goes red when the step is forgotten — coverage just quietly stops
