@@ -160,24 +160,24 @@ def zbadaj(repo: str, limit: int, token: str | None) -> list[Para]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("repo", help="owner/name")
-    ap.add_argument("--limit", type=int, default=60, help="ile zamknietych issues obejrzec")
+    ap.add_argument("--limit", type=int, default=60, help="how many closed issues to inspect")
     a = ap.parse_args()
 
     braki = zbadaj(a.repo, a.limit, os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"))
 
     if not braki:
-        print("nic nie znalazlem")
+        print("nothing found")
         return 0
 
-    print(f"kryteriow nieobecnych w kodzie: {len(braki)}\n")
+    print(f"criteria absent from the code: {len(braki)}\n")
     for b in braki:
-        print(f"#{b.numer}  zamkniete {b.zamkniete}  {b.tytul}")
-        print(f"   szukane: `{b.token}`   w: {b.plik}   -> BRAK")
-        print(f"   z tresci: {b.zdanie}")
+        print(f"#{b.numer}  closed {b.zamkniete}  {b.tytul}")
+        print(f"   looked for: `{b.token}`   in: {b.plik}   -> ABSENT")
+        print(f"   from the body: {b.zdanie}")
         print()
 
-    print("To sa TROPY. Kryterium mogło zostac spelnione inaczej, plik zmieniony,")
-    print("albo zespol swiadomie zmienil zdanie. Przeczytaj issue przed zgloszeniem.")
+    print("These are LEADS. The criterion may have been met another way, the file")
+    print("renamed, or the team may have changed their mind. Read the issue.")
     return 0
 
 

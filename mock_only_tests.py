@@ -114,9 +114,9 @@ def zbadaj_sciezke(korzen: Path, min_patchy: int = 2) -> list[Znalezisko]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("sciezki", nargs="+", help="pliki albo katalogi z testami")
+    ap.add_argument("sciezki", nargs="+", help="test files or directories")
     ap.add_argument("--min-patchy", type=int, default=2,
-                    help="ile atrap musi byc w tescie, zeby go zgłosic (domyslnie 2)")
+                    help="how many mocks a test needs before it is reported (default 2)")
     a = ap.parse_args()
 
     wszystkie: list[Znalezisko] = []
@@ -124,21 +124,21 @@ def main() -> int:
         wszystkie.extend(zbadaj_sciezke(Path(s), a.min_patchy))
 
     if not wszystkie:
-        print("nic nie znalazlem")
+        print("nothing found")
         return 0
 
-    print(f"testow patrzacych tylko na okablowanie: {len(wszystkie)}\n")
+    print(f"tests asserting wiring only: {len(wszystkie)}\n")
     ostatni = None
     for z in wszystkie:
         if z.plik != ostatni:
             print(z.plik)
             ostatni = z.plik
         print(f"  :{z.linia}  {z.test}"
-              f"   (atrap: {z.ile_patchy}, asercji wywolan: {z.asercje_wywolan},"
-              f" asercji wartosci: 0)")
+              f"   (mocks: {z.ile_patchy}, call assertions: {z.asercje_wywolan},"
+              f" value assertions: 0)")
 
-    print("\nTo sa TROPY. Taki test jest w porzadku, jesli zachowanie sprawdza")
-    print("cos innego. Pytanie brzmi: czy cokolwiek patrzy na zwracana wartosc.")
+    print("\nThese are LEADS. Such a test is fine when something else checks the")
+    print("behaviour. The question is whether anything looks at the return value.")
     return 0
 
 

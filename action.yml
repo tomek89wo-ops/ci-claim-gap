@@ -1,0 +1,95 @@
+name: "CI claim gap"
+description: >-
+  Report the gap between what this repository's CI appears to cover and what it
+  runs: platforms never tested on, test lanes filtered by tag, tests that assert
+  wiring instead of behaviour, and issues closed as completed whose stated
+  criterion is absent from the code.
+author: "Tomasz Wadowski"
+
+branding:
+  icon: "alert-triangle"
+  color: "yellow"
+
+inputs:
+  repository:
+    description: "owner/name to inspect. Defaults to the repository running this action."
+    required: false
+    default: ${{ github.repository }}
+  tests-path:
+    description: >-
+      Path to the Python tests to scan for wiring-only assertions. Leave empty
+      to skip that check.
+    required: false
+    default: ""
+  check-closed-issues:
+    description: >-
+      Also check issues closed as completed whose stated criterion is absent.
+      Needs a token with issue read access; set GH_TOKEN in env.
+    required: false
+    default: "false"
+  fail-on-findings:
+    description: >-
+      Fail the job when anything is reported. Default false, because these are
+      leads rather than verdicts and a red build is the wrong way to deliver a
+      lead.
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check out ci-claim-gap
+      uses: actions/checkout@v4
+      with:
+        repository: tomek89wo-ops/ci-claim-gap
+        path: .ci-claim-gap
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Platform gaps and opt-in coverage
+      shell: bash
+      run: |
+        python .ci-claim-gap/ci_claim_gap.py "${{ inputs.repository }}" | tee /tmp/ccg-ci.txt
+
+    - name: Tests that assert wiring instead of behaviour
+      if: inputs.tests-path != ''
+      shell: bash
+      run: |
+        python .ci-claim-gap/mock_only_tests.py "${{ inputs.tests-path }}" | tee /tmp/ccg-mock.txt
+
+    - name: Issues closed as completed whose criterion is absent
+      if: inputs.check-closed-issues == 'true'
+      shell: bash
+      run: |
+        python .ci-claim-gap/closed_but_absent.py "${{ inputs.repository }}" | tee /tmp/ccg-closed.txt
+
+    - name: Summarise
+      shell: bash
+      run: |
+        {
+          echo "## CI claim gap"
+          echo
+          echo "Leads, not verdicts. A filter can be deliberate, tests can run somewhere"
+          echo "this action cannot see, and a criterion can have been met another way."
+          echo
+          for f in /tmp/ccg-ci.txt /tmp/ccg-mock.txt /tmp/ccg-closed.txt; do
+            [ -f "$f" ] || continue
+            echo '```'
+            cat "$f"
+            echo '```'
+            echo
+          done
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Fail if anything was reported
+      if: inputs.fail-on-findings == 'true'
+      shell: bash
+      run: |
+        if grep -qE "PLATFORM GAP|OPT-IN COVERAGE|asserting wiring only|criteria absent" \
+             /tmp/ccg-ci.txt /tmp/ccg-mock.txt /tmp/ccg-closed.txt 2>/dev/null; then
+          echo "Findings reported and fail-on-findings is true." >&2
+          exit 1
+        fi
+        echo "Nothing reported."

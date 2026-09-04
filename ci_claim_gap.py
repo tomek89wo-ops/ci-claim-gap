@@ -150,9 +150,9 @@ def zbadaj(repo: str, token: str | None) -> dict:
     try:
         pliki = _pobierz(f"{API}/repos/{repo}/contents/.github/workflows", token)
     except urllib.error.HTTPError as e:
-        return {"repo": repo, "blad": f"HTTP {e.code} przy listowaniu workflowow"}
+        return {"repo": repo, "blad": f"HTTP {e.code} listing workflows"}
     if not isinstance(pliki, list):
-        return {"repo": repo, "blad": "brak katalogu .github/workflows"}
+        return {"repo": repo, "blad": "no .github/workflows directory"}
 
     tresci: dict[str, str] = {}
     for f in pliki:
@@ -161,7 +161,7 @@ def zbadaj(repo: str, token: str | None) -> dict:
         try:
             tresci[f["name"]] = _tekst(f["download_url"])
         except Exception as e:  # noqa: BLE001 - jeden zly plik nie moze przerwac skanu
-            print(f"  ! nie odczytalem {f['name']}: {type(e).__name__}", file=sys.stderr)
+            print(f"  ! could not read {f['name']}: {type(e).__name__}", file=sys.stderr)
 
     zadania: list[Zadanie] = []
     for nazwa_pliku, tresc in tresci.items():
@@ -217,29 +217,29 @@ def _wypisz(w: dict) -> None:
         print(f"\n{w['repo']}\n  {w['blad']}")
         return
     print(f"\n{w['repo']}")
-    print(f"  workflowow: {w['workflowow']}   zadan: {w['zadan']}"
-          f"   delegujacych: {w['delegujacych']}")
-    print(f"  testy chodza na: {w['systemy_z_testami'] or ['tylko linux']}")
+    print(f"  workflows: {w['workflowow']}   jobs: {w['zadan']}"
+          f"   delegating: {w['delegujacych']}")
+    print(f"  tests run on: {w['systemy_z_testami'] or ['linux only']}")
 
     if w["luki_platform"]:
-        print("  LUKA PLATFORMY - system wystepuje w CI, ale NIGDZIE nie ma tam testow:")
+        print("  PLATFORM GAP - the OS appears in CI, but no job anywhere tests on it:")
         for l in w["luki_platform"]:
-            print(f"    {l['system']}  (wspomniany w: {', '.join(l['wspomniany_w'])})")
+            print(f"    {l['system']}  (appears in: {', '.join(l['wspomniany_w'])})")
     if w["opt_in"]:
-        print("  POKRYCIE OPT-IN - krok testowy filtrowany, obejmuje tylko oznaczone:")
+        print("  OPT-IN COVERAGE - the test step is filtered, so it covers only tagged tests:")
         for o in w["opt_in"]:
             gdzie = ", ".join(o["systemy"]) or "linux"
-            przez = " (przez wywolanie)" if o["przez_wywolanie"] else ""
+            przez = " (via reusable workflow)" if o["przez_wywolanie"] else ""
             print(f"    {o['plik']} :: {o['zadanie']} ({gdzie}){przez}  [{o['filtr']}]")
             print(f"      {o['krok']}")
     if not w["luki_platform"] and not w["opt_in"]:
-        print("  nic nie znalazlem")
+        print("  nothing found")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("repos", nargs="+", help="owner/name, moze byc wiele")
-    ap.add_argument("--json", action="store_true", help="surowy JSON zamiast raportu")
+    ap.add_argument("repos", nargs="+", help="owner/name, one or more")
+    ap.add_argument("--json", action="store_true", help="raw JSON instead of the report")
     a = ap.parse_args()
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -250,9 +250,9 @@ def main() -> int:
     else:
         for w in wyniki:
             _wypisz(w)
-        print("\nUWAGA: to sa TROPY, nie werdykty. Zanim cokolwiek zglosisz,")
-        print("przeczytaj plik workflow i tracker repo. Filtr moze byc swiadomy,")
-        print("a testy moga chodzic w miejscu, ktorego ten skrypt nie widzi.")
+        print("\nThese are LEADS, not verdicts. Read the workflow file and the")
+        print("issue tracker before reporting anything. A filter can be deliberate,")
+        print("and tests can run somewhere this script cannot see.")
     return 0
 
 

@@ -24,11 +24,11 @@ rate limit.
 $ python ci_claim_gap.py kenryu42/cc-safety-net
 
 kenryu42/cc-safety-net
-  workflowow: 8   zadan: 13   delegujacych: 0
-  testy chodza na: ['windows']
-  LUKA PLATFORMY - system wystepuje w CI, ale NIGDZIE nie ma tam testow:
-    macos  (wspomniany w: ci.yml::packed-runtime)
-  POKRYCIE OPT-IN - krok testowy filtrowany, obejmuje tylko oznaczone:
+  workflows: 8   jobs: 13   delegating: 0
+  tests run on: ['windows']
+  PLATFORM GAP - the OS appears in CI, but no job anywhere tests on it:
+    macos  (appears in: ci.yml::packed-runtime)
+  OPT-IN COVERAGE - the test step is filtered, so it covers only tagged tests:
     test-windows.yml :: test-windows (windows)  [--test-name-pattern]
       run: bun test tests --test-name-pattern '\[windows\]'
 ```
@@ -126,6 +126,19 @@ another repository of the form "`hooks/hooks.json` runs `npx -y cc-safety-net`",
 which state what the environment does rather than promise what a file will
 contain. A sentence now qualifies only if it is a checklist item or opens with a
 prescriptive verb.
+
+## Using it as a GitHub Action
+
+```yaml
+- uses: tomek89wo-ops/ci-claim-gap@main
+  with:
+    tests-path: tests            # optional, enables the wiring-only check
+    check-closed-issues: "true"  # optional, needs GH_TOKEN
+```
+
+Results land in the job summary. It does not fail the build by default: these
+are leads, and a red build is the wrong way to deliver a lead. Set
+`fail-on-findings: "true"` if you would rather gate on them.
 
 ## Why these checks
 
