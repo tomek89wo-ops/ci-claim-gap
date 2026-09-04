@@ -1,0 +1,32 @@
+name: self-action
+
+# Runs this repository's own action against this repository.
+#
+# Shipping an action without running it would be an odd thing for a project
+# whose entire argument is that a declared check should have something behind
+# it. If the action breaks, this job goes red before anyone else finds out.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-own-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ci-claim-gap on itself
+        uses: ./
+        with:
+          tests-path: test_ci_claim_gap.py
+          check-closed-issues: "false"
+          fail-on-findings: "false"
+        env:
+          GH_TOKEN: ${{ github.token }}
