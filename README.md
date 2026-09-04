@@ -73,10 +73,38 @@ poetry, pre-commit, scrapy, FastAPI, Typer and NeMo-Guardrails all come back
 clean, which is the result that matters: a tool that finds something everywhere
 is finding nothing.
 
-## Why these two checks
+## A second check: tests that assert wiring instead of behaviour
 
-Both come from the same shape: a mechanism that has to be remembered rather than
-enforced. A Windows runner that builds but does not test, and a test lane that
+```
+python mock_only_tests.py path/to/tests
+```
+
+Finds Python tests that patch out two or more collaborators, call the thing
+under test, and then assert only *which* collaborator was called — never what
+came back. Such a test passes identically whether or not the collaborators agree
+on their output, so a divergence between them is invisible to it by
+construction.
+
+This came from a real report. `guardrails-ai/guardrails` has an open issue
+(#1633) where the sync and async validator services return different validated
+output and the default path silently discards fixes. Pointing this script at the
+dispatcher tests for that code:
+
+```
+  :72   test_validate_with_sync   (mocks: 5, call assertions: 2, value assertions: 0)
+  :97   test_validate_with_async   (mocks: 5, call assertions: 2, value assertions: 0)
+  :122  test_validate_with_no_available_event_loop   (mocks: 5, call assertions: 3, value assertions: 0)
+```
+
+Heavy mocking is not the finding. Mocking everything and never looking at the
+result is. Run against this repository's own tests — which use
+`monkeypatch.setattr` seven times across tests with two or more patches — it
+reports nothing, because every one of them asserts on a value.
+
+## Why these checks
+
+All three come from the same shape: a mechanism that has to be remembered rather
+than enforced. A Windows runner that builds but does not test, and a test lane that
 only runs tagged tests, are both arrangements where the default is silence.
 Nothing goes red when the step is forgotten — coverage just quietly stops
 growing, and the next platform-specific bug reaches a user instead of a CI log.
