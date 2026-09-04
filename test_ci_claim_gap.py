@@ -205,3 +205,29 @@ def test_latest_py_nie_jest_testem():
     """`latest.py` zawiera litery `test`. Wzorzec wymaga nie-litery przed nimi."""
     kroki, _ = cg._kroki_testowe_w("run: python scripts/latest.py")
     assert not kroki
+
+
+# --- korekta 5: skrypt pakietu jako krok testowy ----------------------------
+
+def test_skrypt_pakietu_liczy_sie_jako_uruchomienie_testow():
+    """cc-safety-net dodalo zadania na Windows i macOS wolajace `bun run check:ci`.
+    Wzorzec szukajacy `bun test` uznal je za zadania bez testow, wiec narzedzie
+    zglosilo luke platformy dokladnie po tym, jak luka zostala zalatana."""
+    for polecenie in (
+        "run: bun run check:ci",
+        "run: npm run test:unit",
+        "run: pnpm run check",
+        "run: yarn run test",
+    ):
+        kroki, _ = cg._kroki_testowe_w(polecenie)
+        assert kroki, f"nie rozpoznano jako testu: {polecenie}"
+
+
+def test_skrypt_pakietu_niezwiazany_z_testami_nie_liczy_sie():
+    for polecenie in (
+        "run: bun run build",
+        "run: npm run lint",
+        "run: bun run verify:package",
+    ):
+        kroki, _ = cg._kroki_testowe_w(polecenie)
+        assert not kroki, f"blednie uznane za test: {polecenie}"
