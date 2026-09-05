@@ -129,6 +129,32 @@ which state what the environment does rather than promise what a file will
 contain. A sentence now qualifies only if it is a checklist item or opens with a
 prescriptive verb.
 
+## A fourth check: flags that gate behaviour and no test ever sets
+
+```
+python untested_flags.py path/to/package --tests path/to/tests
+```
+
+Finds environment variables a module branches on that are never mentioned
+anywhere in the test suite. The read has tests, the branch it guards has tests,
+but no test ever sets the variable — so only one of the two paths is ever
+exercised. The switch is one nobody has flipped.
+
+This generalises a failure from the author's own system: a `SENTRY_ENFORCE=1`
+flag with a working reader, passing tests, and logs reporting "protection
+active, 0 violations" every week. Every word of that was true and meaningless,
+because no process ever wrote the table the reader read.
+
+You cannot detect a missing writer from static text. You can detect the weaker
+and still useful thing: a flag whose second state the suite has never entered.
+
+Pointed at that same system today, it reports 20 flags read and 5 the tests
+never mention. Pointed at this repository, it reports none.
+
+Operating-system and CI variables — `APPDATA`, `HOME`, `GITHUB_TOKEN`,
+`RUNNER_TEMP` and the rest — are excluded. `APPDATA` was this check's first
+false positive.
+
 ## Using it as a GitHub Action
 
 ```yaml
