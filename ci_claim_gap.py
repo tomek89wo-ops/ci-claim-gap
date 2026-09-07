@@ -14,10 +14,12 @@ Three checks, all learned the hard way while auditing real repositories:
    none. OpenHands/OpenHands#17148 is this shape: `test-and-build (windows)`
    passes having run `npm ci` and `npm run build` and nothing else.
 
-ELEVEN corrections are baked in, each from a wrong answer this tool gave first
-and each pinned by a test - see README.md for the full table. The three below
-are the oldest; the newest is this file's own gated-step check, which produced
-nine false hits on its first run against the repository it was written for.
+THIRTEEN corrections are baked in, each from a wrong answer this tool gave
+first and each pinned by a test - see README.md for the full table. The three
+below are the oldest. The newest two came from a single repository: zed was
+reported as testing on Linux only, with gaps on Windows and macOS, while
+running three full test jobs - because `cargo nextest run` was not recognised
+as a test runner, and `namespace-profile-mac-large` was not recognised as a Mac.
 
 * Reading one workflow file is not reading CI. An earlier manual audit reported
   a missing Windows job after opening only `ci.yml`; a separate
@@ -64,6 +66,15 @@ URUCHAMIA_TESTY = re.compile(
     r"\b(?:pytest|bun\s+test|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|"
     r"go\s+test|cargo\s+test|dotnet\s+test|mvn\s+test|gradle\s+test|"
     r"jest|vitest|mocha|tox|nox|unittest|rspec|phpunit|ctest)\b"
+    # Correction 12: `cargo nextest run`, the default test runner across much
+    # of modern Rust. `\btest\b` cannot match inside "nextest", so zed
+    # (~60k stars) was reported as testing on Linux only, with platform gaps on
+    # Windows and macOS - while running `run_tests_windows`, `run_tests_linux`
+    # and `run_tests_mac`, each calling nextest. The one step the pattern did
+    # see was `cargo test --workspace --doc` on ubuntu, which is where the
+    # false "linux only" came from. `run` is required: `nextest list` only
+    # enumerates tests.
+    r"|\bcargo[\s-]+nextest\s+run\b"
     r"|\b(?:make|just|hatch\s+run|rake)\s+(?:test|check)\w*\b"
     # Skrypt pakietu: `bun run check:ci`, `npm run test:unit`. cc-safety-net
     # dodalo zadania na Windows i macOS wolajace `bun run check:ci` i wzorzec
@@ -103,7 +114,24 @@ FILTRUJE = [
     (re.compile(r"--filter[= ]\s*\S+"), "--filter"),
 ]
 
-NIE_LINUX = re.compile(r"\b(windows|macos)[\w.-]*\b", re.I)
+# Correction 13: large projects rarely run on `macos-latest`. zed tests on
+# `namespace-profile-mac-large` and `self-32vcpu-windows-2022`, so a pattern
+# anchored on the literal `macos` saw `run_tests_mac` as a Linux job and
+# reported a macOS platform gap in a repository that runs a full macOS suite.
+#
+# After `mac`, a separator is REQUIRED. The first version of this used
+# `[\w.-]*`, and its own test caught the mistake: that suffix swallows the rest
+# of a word, so `machine` and `macro` both registered as macOS. Any workflow
+# with a passing mention of "machine" would have looked like a macOS lane.
+NIE_LINUX = re.compile(r"\b(windows|macos|mac)(?:[-._][\w.-]*)?\b", re.I)
+
+
+def _system(s: str) -> str:
+    """Normalise a runner label to a platform name. Without this `mac` and
+    `macos` become two different platforms, and the gap arithmetic compares
+    a set containing one against a set containing the other."""
+    s = s.lower()
+    return "macos" if s.startswith("mac") else s
 
 # `uses: ./.github/workflows/foo.yml` - the steps live in another file.
 WYWOLANIE_LOKALNE = re.compile(r"^\s*uses:\s*\./\.github/workflows/([\w.-]+\.ya?ml)", re.M)
@@ -283,7 +311,7 @@ def _rozbij_zadania(tresc: str, plik: str) -> list[Zadanie]:
         koniec = granice[i + 1][0] if i + 1 < len(granice) else len(reszta)
         blok = reszta[poz:koniec]
         z = Zadanie(plik=plik, nazwa=nazwa)
-        z.systemy = sorted({s.lower() for s in NIE_LINUX.findall(blok)})
+        z.systemy = sorted({_system(s) for s in NIE_LINUX.findall(blok)})
         z.kroki_testowe, z.filtry = _kroki_testowe_w(blok)
         z.bramkowane = _bramkowane(blok)
         m_uses = WYWOLANIE_LOKALNE.search(blok)
@@ -326,18 +354,18 @@ def zbadaj(repo: str, token: str | None) -> dict:
     for z in zadania:
         if z.kroki_testowe or z.testuje_przez_wywolanie:
             for s in z.systemy:
-                systemy_z_testami.add(s.split("-")[0])
+                systemy_z_testami.add(_system(s.split("-")[0]))
 
     # Luka platformy tylko wtedy, gdy NIGDZIE w repo nie ma testow na tym systemie.
     systemy_wspomniane: set[str] = set()
     for z in zadania:
         for s in z.systemy:
-            systemy_wspomniane.add(s.split("-")[0])
+            systemy_wspomniane.add(_system(s.split("-")[0]))
     luki = sorted(systemy_wspomniane - systemy_z_testami)
 
     gdzie_wspomniane = {
         s: sorted({f"{z.plik}::{z.nazwa}" for z in zadania
-                   if any(x.split("-")[0] == s for x in z.systemy)})[:4]
+                   if any(_system(x.split("-")[0]) == s for x in z.systemy)})[:4]
         for s in luki
     }
 

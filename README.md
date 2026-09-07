@@ -47,9 +47,9 @@ tracker before you report anything to anyone.
 That warning is not boilerplate. It exists because the author reported a missing
 Windows job in a public repository after reading only `ci.yml`, and was wrong.
 
-## Ten corrections, each now a test
+## Thirteen corrections, each now a test
 
-This tool gave a wrong answer ten times before it gave a useful one. Each
+This tool gave a wrong answer thirteen times before it gave a useful one. Each
 mistake is pinned by a test in `test_ci_claim_gap.py`, so the suite is a record
 of what it got wrong rather than a restatement of what the code does.
 
@@ -65,6 +65,9 @@ of what it got wrong rather than a restatement of what the code does.
 | browser-use as untested on Windows and macOS | `- name: Set up venv and test for OS/Python versions`, on a three-OS matrix | Same fix; two repositories hit the same blind spot on the same day |
 | astral-sh/uv's `Install NASM` step, which runs no test at all, as a gated test step | The task-runner pattern used a negated character class, which matches newlines: `Invoke-WebRequest` on one line joined the word `checksum` three lines below | Exclude the newline from every such class — the same flaw was in all three filter patterns |
 | Ten gated steps in OpenHands, of which one was real | `if: always()` is the *opposite* of a gate, and `Upload test artifacts` handles a test's output rather than running it | A gate counts only when the step's COMMAND runs tests, and never for `always()` / `success()` / `!cancelled()` |
+| continuedev/continue as having a switchable test step | `Run smoke tests` and `Run tests` are unconditional there; only `Run e2e tests` is gated off Windows, which is narrower coverage, not absent coverage | A gate counts only when EVERY test step in the job is gated |
+| zed as testing on Linux only, with gaps on Windows and macOS | It runs `run_tests_windows`, `run_tests_linux` and `run_tests_mac`, each calling `cargo nextest run` — the default Rust test runner, which `\btest\b` cannot match inside "nextest" | Recognise `cargo nextest run`; the pattern had been blind to most of modern Rust |
+| zed's macOS gap, still, after that fix | Its runner is `namespace-profile-mac-large`. Large projects rarely use `macos-latest` | Accept `mac` followed by a separator — and *only* by a separator, or `machine` and `macro` register as Macs, which this correction's own test caught |
 
 The last three matter most, and the last one is this tool marking its own
 homework: the gated-step check produced nine false hits on its own first run,

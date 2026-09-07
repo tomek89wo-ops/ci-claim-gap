@@ -527,3 +527,82 @@ def test_uruchomienie_obok_przekierowania_liczy_sie():
     """`pytest > wynik.txt` to nadal uruchomienie testow."""
     kroki, _ = cg._kroki_testowe_w("run: pytest tests/ > wyniki.txt")
     assert kroki
+
+
+# --- korekta 12: cargo nextest, standardowy runner Rusta --------------------
+# zed-industries/zed (~60k gwiazdek) zostal zgloszony jako testowany WYLACZNIE
+# na Linuksie, z luka platformy na Windows i macOS. Nieprawda: repo ma
+# `run_tests_windows`, `run_tests_linux` i `run_tests_mac`, kazdy wolajacy
+#     cargo nextest run --workspace --no-fail-fast
+# Wzorzec mial `cargo\s+test`, a to jest `cargo nextest` — i `\btest\b` nie
+# dopasuje sie w srodku slowa "nextest". Jedynym rozpoznanym krokiem byl
+# `cargo test --workspace --doc` w zadaniu doctests na ubuntu, stad falszywe
+# "linux only" przy trzech pelnych zadaniach testowych.
+#
+# To jest najszersza z dotychczasowych fałszywek: nextest jest dzis domyslnym
+# runnerem w duzej czesci ekosystemu Rusta, wiec ta luka dotyczyla KAZDEGO
+# nowoczesnego repo w tym jezyku.
+
+def test_cargo_nextest_liczy_sie_jako_uruchomienie_testow():
+    for polecenie in (
+        "run: cargo nextest run --workspace --no-fail-fast --no-tests=warn",
+        "run: cargo nextest run -E 'package(foo)'",
+        "run: cargo-nextest run --workspace",
+    ):
+        kroki, _ = cg._kroki_testowe_w(polecenie)
+        assert kroki, f"nie rozpoznano jako testu: {polecenie}"
+
+
+def test_cargo_test_nadal_dziala():
+    """Regresja: `cargo test --workspace --doc` musi zostac rozpoznane."""
+    kroki, _ = cg._kroki_testowe_w("run: cargo test --workspace --doc --no-fail-fast")
+    assert kroki
+
+
+def test_nextest_bez_run_to_nie_uruchomienie():
+    """`cargo nextest list` wypisuje testy, nie uruchamia ich."""
+    kroki, _ = cg._kroki_testowe_w("run: cargo nextest list")
+    assert not kroki
+
+
+# --- korekta 13: niestandardowe nazwy runnerow ------------------------------
+# Po korekcie 12 zed nadal mial zgloszona luke na macOS, bo jego runner nazywa
+# sie `namespace-profile-mac-large` — jest tam `mac`, nie ma `macos`. Zadanie
+# `run_tests_mac` wola nextest na tej maszynie, wiec macOS JEST testowany.
+# Duze projekty rzadko uzywaja `macos-latest`; jada na wlasnych albo
+# wynajetych runnerach o dowolnych nazwach.
+
+def test_runner_z_samym_mac_liczy_sie_jako_macos():
+    zadania = cg._rozbij_zadania(
+        "jobs:\n"
+        "  run_tests_mac:\n"
+        "    runs-on: namespace-profile-mac-large\n"
+        "    steps:\n"
+        "      - run: cargo nextest run --workspace\n",
+        "run_tests.yml")
+    assert zadania, "zadanie nie zostalo rozpoznane"
+    assert "macos" in zadania[0].systemy, zadania[0].systemy
+
+
+def test_self_hosted_windows_tez_liczy_sie():
+    zadania = cg._rozbij_zadania(
+        "jobs:\n"
+        "  run_tests_windows:\n"
+        "    runs-on: self-32vcpu-windows-2022\n"
+        "    steps:\n"
+        "      - run: cargo nextest run --workspace\n",
+        "run_tests.yml")
+    assert any(s.startswith("windows") for s in zadania[0].systemy), zadania[0].systemy
+
+
+def test_machine_i_macro_to_NIE_macos():
+    """Granica slowa musi odciac `machine`, `macro`, `mach`. Bez tego kazdy
+    `runs-on: ubuntu-latest` z komentarzem o 'machine' udawalby macOS."""
+    zadania = cg._rozbij_zadania(
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-latest   # big machine, macro expansion\n"
+        "    steps:\n"
+        "      - run: pytest\n",
+        "ci.yml")
+    assert not zadania[0].systemy, zadania[0].systemy
