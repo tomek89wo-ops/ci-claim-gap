@@ -86,3 +86,49 @@ def test_jest_kryterium_rozroznia_wprost():
     assert c._jest_kryterium("- [x] Set `x` in `f.yml`")
     assert not c._jest_kryterium("`f.yml` runs `x`")
     assert not c._jest_kryterium("The cache contains `x`")
+
+
+# --- korekta 19: sciezka klucza w JSON nie wystepuje doslownie --------------
+# OpenHands#17085, zamkniete 2026-09-02. Kryterium: "config/defaults.json ma
+# `versions.automation` ustawione na 1.10.0". Narzedzie zglosilo ABSENT.
+#
+# Plik zawiera dokladnie to, czego kryterium zada:
+#     "versions": { "agentServer": "1.44.1", "automation": "1.10.0" }
+#
+# Ciag "versions.automation" NIE WYSTEPUJE w tym pliku, bo w JSON-ie to jest
+# ZAGNIEZDZENIE, a nie plaski klucz. Wyszukiwanie tekstowe zglasza brak czegos,
+# co jest obecne — a to jest najgorszy mozliwy blad tej kontroli: falszywe
+# oskarzenie, ze zamkniete zgloszenie nie zostalo wykonane.
+
+import json
+
+
+def test_sciezka_json_liczy_sie_jako_obecna():
+    tresc = json.dumps({"versions": {"agentServer": "1.44.1",
+                                     "automation": "1.10.0"}}, indent=2)
+    assert c._obecny("versions.automation", tresc, "defaults.json"), (
+        "sciezka zagniezdzona w JSON jest OBECNA, choc nie wystepuje doslownie")
+
+
+def test_brakujaca_sciezka_json_nadal_jest_brakiem():
+    tresc = json.dumps({"versions": {"agentServer": "1.44.1"}}, indent=2)
+    assert not c._obecny("versions.automation", tresc, "defaults.json")
+
+
+def test_zwykly_token_w_pliku_nie_json_dziala_jak_dotad():
+    assert c._obecny("runs-on: windows", "jobs:\n  x:\n    runs-on: windows\n",
+                       "ci.yml")
+    assert not c._obecny("runs-on: macos", "jobs:\n  x:\n    runs-on: windows\n",
+                           "ci.yml")
+
+
+def test_zepsuty_json_spada_do_wyszukiwania_tekstowego():
+    """Plik z rozszerzeniem .json, ktorego nie da sie sparsowac, nie moze
+    wywrocic kontroli — ma zachowac sie jak zwykly tekst.
+
+    Pierwsza wersja tego testu byla bledna: podawala tresc, ktora nie
+    zawierala szukanego tokenu, i sprawdzala, ze token jest obecny. Poprawiony
+    zostal test, nie kod."""
+    zepsuty = "{ versions.automation to nie jest poprawny json"
+    assert c._obecny("versions.automation", zepsuty, "x.json")
+    assert not c._obecny("versions.brakujace", zepsuty, "x.json")

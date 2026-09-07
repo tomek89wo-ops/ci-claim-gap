@@ -124,6 +124,49 @@ def _pary_z_tresci(tresc: str) -> list[tuple[str, str, str]]:
     return wynik
 
 
+# Correction 19: a key PATH is not a literal string in the file.
+# OpenHands#17085, closed 2026-09-02, states: "`config/defaults.json` has
+# `versions.automation` set to `1.10.0`". The file contains exactly that:
+#
+#     "versions": { "agentServer": "1.44.1", "automation": "1.10.0" }
+#
+# but the literal text `versions.automation` never appears, because in JSON
+# that is NESTING rather than a flat key. A substring search therefore reported
+# a criterion as absent while it was met - the worst possible failure for this
+# check, since it accuses a team of closing an issue they actually finished.
+def _sciezka_w_json(tok: str, dane) -> bool:
+    """True when a dotted path resolves inside parsed JSON."""
+    biezacy = dane
+    for czesc in tok.split("."):
+        if isinstance(biezacy, dict) and czesc in biezacy:
+            biezacy = biezacy[czesc]
+        else:
+            return False
+    return True
+
+
+def _obecny(tok: str, tresc: str, plik: str) -> bool:
+    """Is the criterion present in this file?
+
+    For JSON a dotted token is tried as a key path first; everything else -
+    and any JSON that will not parse - falls back to the substring search the
+    check has always used.
+    """
+    if tok in tresc:
+        return True
+    # The JSON path is an ADDITIONAL way to be present, never a replacement.
+    # Returning its result directly was a regression caught on the live repo
+    # minutes after the fix: the token `1.10.0` is a VERSION NUMBER, and its
+    # dots made it look like a key path, so the check hunted for a key named
+    # "1" and reported a value sitting plainly in the file as absent.
+    if plik.lower().endswith(".json") and "." in tok:
+        try:
+            return _sciezka_w_json(tok, json.loads(tresc))
+        except (ValueError, TypeError):
+            return False                  # nie JSON, a tekstowo juz nie bylo
+    return False
+
+
 def zbadaj(repo: str, limit: int, token: str | None) -> list[Para]:
     try:
         info = _pobierz(f"{API}/repos/{repo}", token)
@@ -148,7 +191,7 @@ def zbadaj(repo: str, limit: int, token: str | None) -> list[Para]:
             tresc = cache[plik]
             if tresc is None:
                 continue                      # pliku nie ma - inna historia
-            if tok not in tresc:
+            if not _obecny(tok, tresc, plik):
                 braki.append(Para(
                     numer=i["number"], tytul=i["title"][:80],
                     zamkniete=(i.get("closed_at") or "")[:10],
