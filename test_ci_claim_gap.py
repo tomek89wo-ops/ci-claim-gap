@@ -626,3 +626,69 @@ def test_macos_tylko_w_codeql_to_NIE_luka():
 def test_zwykle_workflow_nie_sa_analiza_statyczna():
     for f in ("ci.yml", "release.yml", "desktop-macos.yml", "build.yaml"):
         assert not cg._analiza_statyczna(f), f
+
+
+# --- korekta 15: para komplementarna z == / != ------------------------------
+# withastro/astro ma w jednym zadaniu:
+#     - name: Test (Linux)  if: runner.os == 'Linux'
+#     - name: Test          if: runner.os != 'Linux'
+# Razem pokrywaja wszystko. Korekta 8c tego nie zlapala, bo usuwa tylko
+# WIODACA negacje (`!X` vs `X`), a tu negacja siedzi w operatorze.
+
+def test_para_z_operatorem_rowna_sie_i_rozne_od():
+    blok = ("      - name: Test (Linux)\n        if: runner.os == 'Linux'\n"
+            "        run: pnpm test\n"
+            "      - name: Test\n        if: runner.os != 'Linux'\n"
+            "        run: pnpm test\n")
+    assert not cg._bramkowane(blok), "to jest pelne pokrycie, nie luka"
+
+
+def test_rozne_wartosci_to_NIE_para():
+    """`== windows` i `!= macos` nie pokrywaja sie nawzajem."""
+    blok = ("      - name: Test A\n        if: matrix.os == 'windows'\n"
+            "        run: pnpm test\n"
+            "      - name: Test B\n        if: matrix.os != 'macos'\n"
+            "        run: pnpm test\n")
+    assert len(cg._bramkowane(blok)) == 2
+
+
+# --- NOWA KONTROLA: test, ktorego niepowodzenie jest POLYKANE ---------------
+# withastro/astro:
+#     run: xvfb-run -a pnpm test || echo "::warning ...Known flaky; not failing CI."
+# Test sie uruchamia, moze paść, i CI przechodzi. To jest cicha awaria
+# w najczystszej postaci: zielony znaczek nie niesie zadnej informacji
+# o tym, czy testy przeszly.
+#
+# `continue-on-error: true` na kroku testowym robi doklanie to samo, tylko
+# skladnia GitHuba zamiast powloki.
+
+def test_polkniety_blad_przez_or_echo():
+    blok = "      - name: Test\n        run: pnpm test || echo 'flaky, ignoring'\n"
+    assert cg._polykany_blad(blok)
+
+
+def test_polkniety_blad_przez_or_true():
+    assert cg._polykany_blad("      - name: Test\n        run: pytest || true\n")
+
+
+def test_polkniety_blad_przez_continue_on_error():
+    blok = ("      - name: Test\n        continue-on-error: true\n"
+            "        run: pytest\n")
+    assert cg._polykany_blad(blok)
+
+
+def test_zwykly_krok_testowy_nie_polyka():
+    assert not cg._polykany_blad("      - name: Test\n        run: pytest -v\n")
+
+
+def test_polykanie_na_kroku_NIETESTOWYM_nie_liczy_sie():
+    """`|| true` przy sprzataniu albo uploadzie to normalna praktyka —
+    kontrola dotyczy wylacznie krokow, ktore URUCHAMIAJA testy."""
+    blok = ("      - name: Cleanup\n        run: rm -rf tmp || true\n")
+    assert not cg._polykany_blad(blok)
+
+
+def test_continue_on_error_false_nie_polyka():
+    blok = ("      - name: Test\n        continue-on-error: false\n"
+            "        run: pytest\n")
+    assert not cg._polykany_blad(blok)

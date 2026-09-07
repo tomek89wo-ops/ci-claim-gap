@@ -47,9 +47,9 @@ tracker before you report anything to anyone.
 That warning is not boilerplate. It exists because the author reported a missing
 Windows job in a public repository after reading only `ci.yml`, and was wrong.
 
-## Thirteen corrections, each now a test
+## Fifteen corrections, each now a test
 
-This tool gave a wrong answer thirteen times before it gave a useful one. Each
+This tool gave a wrong answer fifteen times before it gave a useful one. Each
 mistake is pinned by a test in `test_ci_claim_gap.py`, so the suite is a record
 of what it got wrong rather than a restatement of what the code does.
 
@@ -67,6 +67,8 @@ of what it got wrong rather than a restatement of what the code does.
 | Ten gated steps in OpenHands, of which one was real | `if: always()` is the *opposite* of a gate, and `Upload test artifacts` handles a test's output rather than running it | A gate counts only when the step's COMMAND runs tests, and never for `always()` / `success()` / `!cancelled()` |
 | continuedev/continue as having a switchable test step | `Run smoke tests` and `Run tests` are unconditional there; only `Run e2e tests` is gated off Windows, which is narrower coverage, not absent coverage | A gate counts only when EVERY test step in the job is gated |
 | zed as testing on Linux only, with gaps on Windows and macOS | It runs `run_tests_windows`, `run_tests_linux` and `run_tests_mac`, each calling `cargo nextest run` — the default Rust test runner, which `\btest\b` cannot match inside "nextest" | Recognise `cargo nextest run`; the pattern had been blind to most of modern Rust |
+| langfuse as having a macOS platform gap | macOS appears in exactly one place across its 31 workflows: `codeql.yml::analyze`. CodeQL takes a macOS runner to analyse Swift | Static analysis is neither a build nor a shipment, so it cannot raise the accusation — though it still counts as evidence NOT to accuse |
+| withastro/astro as having a switchable test step | It pairs `if: runner.os == 'Linux'` with `if: runner.os != 'Linux'` — the same complementary shape as correction 8c, written with an operator instead of a leading `!` | Fold `!=` onto `==` when comparing conditions; the compared value survives, so `== windows` and `!= macos` stay distinct |
 | zed's macOS gap, still, after that fix | Its runner is `namespace-profile-mac-large`. Large projects rarely use `macos-latest` | Accept `mac` followed by a separator — and *only* by a separator, or `machine` and `macro` register as Macs, which this correction's own test caught |
 
 The last three matter most, and the last one is this tool marking its own
@@ -100,6 +102,25 @@ Validated against 25 widely-used repositories — see [SURVEY.md](SURVEY.md).
 Fifteen come back completely clean, and most of the remaining ten are describing
 deliberate configuration rather than a defect. That is the result that matters:
 a tool that finds something everywhere is finding nothing.
+
+## Swallowed failures: the test runs, fails, and CI passes anyway
+
+Reported by the same command. A step that runs tests but cannot fail the job —
+`|| true`, `|| echo`, or `continue-on-error: true` — turns the green tick into
+noise: it carries no information about whether the suite passed.
+
+`withastro/astro` runs
+
+```yaml
+- name: Test ts-plugin (Linux, flaky)
+  run: xvfb-run -a pnpm test || echo "::warning ...Known flaky; not failing CI."
+```
+
+They documented it, which is the honest way to do it — but the shape is worth
+finding, because most of the time nobody writes that comment.
+
+Restricted to steps that actually run tests: `|| true` while cleaning up or
+uploading an artefact is ordinary practice and says nothing about coverage.
 
 ## Gated test steps: the job goes green and runs nothing
 

@@ -178,6 +178,7 @@ class Zadanie:
     wywoluje: str | None = None          # delegacja do innego workflow
     testuje_przez_wywolanie: bool = False
     bramkowane: list[str] = field(default_factory=list)   # korekta 8
+    polyka_blad: bool = False                             # 4. kontrola
 
 
 # Correction 7: the word `test` can live in the step NAME rather than in the
@@ -228,11 +229,46 @@ _ZBEDNE = str.maketrans("", "", " '\"`${}()")
 
 def _rdzen_warunku(w: str) -> str:
     """Condition stripped to a comparable core: quoting, spacing, `${{ }}` and
-    a leading negation removed, so `!X` and `X` collapse onto each other."""
-    r = w.translate(_ZBEDNE).lower()
+    a leading negation removed, so `!X` and `X` collapse onto each other.
+
+    Correction 15: the negation is not always leading. withastro/astro pairs
+    `if: runner.os == 'Linux'` with `if: runner.os != 'Linux'`, which is the
+    same complementary shape written with an operator, so `!=` is folded onto
+    `==` too. The compared VALUE survives, so `== windows` and `!= macos` stay
+    distinct and are still both reported.
+    """
+    r = w.translate(_ZBEDNE).lower().replace("!=", "==")
     while r.startswith(("!", "not")):
         r = r[3:] if r.startswith("not") else r[1:]
     return r
+
+
+# A fourth shape, found in withastro/astro on 2026-09-07:
+#     run: xvfb-run -a pnpm test || echo "::warning ...not failing CI."
+# The suite runs, it may fail, and CI goes green regardless. That is a silent
+# failure in its purest form - the green tick carries no information about
+# whether the tests passed. `continue-on-error: true` on a test step does
+# exactly the same thing in GitHub's own syntax.
+#
+# Restricted to steps that RUN tests: `|| true` while cleaning up or uploading
+# is ordinary practice and says nothing about coverage.
+POLYKA_BLAD = re.compile(r"\|\|\s*(?:true|:|echo\b)|^\s*continue-on-error:\s*true\s*$",
+                         re.M | re.I)
+
+
+def _polykany_blad(tresc: str) -> bool:
+    """True when a step runs tests and cannot fail the job."""
+    granice = [m.start() for m in POCZATEK_KROKU.finditer(tresc)]
+    if not granice:
+        granice = [0]
+    for i, poz in enumerate(granice):
+        koniec = granice[i + 1] if i + 1 < len(granice) else len(tresc)
+        krok = tresc[poz:koniec]
+        if not any(_uruchamia_testy(l) for l in krok.splitlines()):
+            continue
+        if POLYKA_BLAD.search(krok):
+            return True
+    return False
 
 
 def _bramkowane(tresc: str) -> list[str]:
@@ -329,6 +365,7 @@ def _rozbij_zadania(tresc: str, plik: str) -> list[Zadanie]:
         z.systemy = sorted({_system(s) for s in NIE_LINUX.findall(blok)})
         z.kroki_testowe, z.filtry = _kroki_testowe_w(blok)
         z.bramkowane = _bramkowane(blok)
+        z.polyka_blad = _polykany_blad(blok)
         m_uses = WYWOLANIE_LOKALNE.search(blok)
         if m_uses:
             z.wywoluje = m_uses.group(1)
@@ -411,6 +448,9 @@ def zbadaj(repo: str, token: str | None) -> dict:
         "luki_platform": [{"system": s, "wspomniany_w": gdzie_wspomniane[s]} for s in luki],
         "opt_in": opt_in,
         "bramkowane": bramkowane,
+        "polykane": [{"plik": z.plik, "zadanie": z.nazwa,
+                      "systemy": z.systemy}
+                     for z in zadania if z.polyka_blad],
     }
 
 
@@ -443,7 +483,16 @@ def _wypisz(w: dict) -> None:
             print(f"      {b['krok']}")
         if len(w["bramkowane"]) > 8:
             print(f"    ... and {len(w['bramkowane']) - 8} more")
-    if not w["luki_platform"] and not w["opt_in"] and not w.get("bramkowane"):
+    if w.get("polykane"):
+        print("  SWALLOWED FAILURE - the test step runs but cannot fail the job,")
+        print("  so a green tick says nothing about whether tests passed:")
+        for p in w["polykane"][:6]:
+            gdzie = ", ".join(p["systemy"]) or "linux"
+            print(f"    {p['plik']} :: {p['zadanie']} ({gdzie})")
+        if len(w["polykane"]) > 6:
+            print(f"    ... and {len(w['polykane']) - 6} more")
+    if (not w["luki_platform"] and not w["opt_in"]
+            and not w.get("bramkowane") and not w.get("polykane")):
         print("  nothing found")
 
 
