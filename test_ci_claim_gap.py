@@ -606,3 +606,23 @@ def test_machine_i_macro_to_NIE_macos():
         "      - run: pytest\n",
         "ci.yml")
     assert not zadania[0].systemy, zadania[0].systemy
+
+
+# --- korekta 14: analiza statyczna to nie dystrybucja ------------------------
+# langfuse dostal zgloszona luke platformy na macOS, bo macOS pojawia sie tam
+# WYLACZNIE w `codeql.yml::analyze`. CodeQL bierze macOS-owy runner, zeby
+# analizowac Swift/ObjC — to nie znaczy, ze projekt jest na macOS wydawany.
+#
+# Cala kontrola opiera sie na zdaniu "repo BUDUJE albo WYSYLA na ten system,
+# a tam nie testuje". Skaner bezpieczenstwa nie jest ani buildem, ani wysylka,
+# wiec nie moze byc przeslanka tego zdania.
+
+def test_macos_tylko_w_codeql_to_NIE_luka():
+    assert cg._analiza_statyczna("codeql.yml")
+    assert cg._analiza_statyczna("codeql-analysis.yml")
+    assert cg._analiza_statyczna("semgrep.yml")
+
+
+def test_zwykle_workflow_nie_sa_analiza_statyczna():
+    for f in ("ci.yml", "release.yml", "desktop-macos.yml", "build.yaml"):
+        assert not cg._analiza_statyczna(f), f

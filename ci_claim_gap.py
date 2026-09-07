@@ -133,6 +133,21 @@ def _system(s: str) -> str:
     s = s.lower()
     return "macos" if s.startswith("mac") else s
 
+# Correction 14: a security scanner is neither a build nor a shipment.
+# langfuse was reported as having a macOS platform gap on the strength of macOS
+# appearing in `codeql.yml::analyze` alone - CodeQL takes a macOS runner to
+# analyse Swift and Objective-C, which says nothing about whether the project
+# is released for macOS. The whole check rests on "this repository builds or
+# ships on that OS and does not test there", so an OS that only ever appears
+# in static analysis cannot support that sentence.
+ANALIZA_STATYCZNA = re.compile(r"\b(?:codeql|semgrep|sonar|snyk|trivy|"
+                               r"scorecard|dependency-review)\b", re.I)
+
+
+def _analiza_statyczna(plik: str) -> bool:
+    return bool(ANALIZA_STATYCZNA.search(plik))
+
+
 # `uses: ./.github/workflows/foo.yml` - the steps live in another file.
 WYWOLANIE_LOKALNE = re.compile(r"^\s*uses:\s*\./\.github/workflows/([\w.-]+\.ya?ml)", re.M)
 
@@ -357,8 +372,14 @@ def zbadaj(repo: str, token: str | None) -> dict:
                 systemy_z_testami.add(_system(s.split("-")[0]))
 
     # Luka platformy tylko wtedy, gdy NIGDZIE w repo nie ma testow na tym systemie.
+    # Correction 14: static-analysis workflows do not count as evidence that
+    # the project targets an OS - see `_analiza_statyczna`. They stay in
+    # `systemy_z_testami` above, because a scanner running there is still a
+    # reason NOT to accuse; they are only barred from raising the accusation.
     systemy_wspomniane: set[str] = set()
     for z in zadania:
+        if _analiza_statyczna(z.plik):
+            continue
         for s in z.systemy:
             systemy_wspomniane.add(_system(s.split("-")[0]))
     luki = sorted(systemy_wspomniane - systemy_z_testami)
