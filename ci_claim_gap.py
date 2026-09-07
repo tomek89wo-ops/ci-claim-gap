@@ -1,6 +1,6 @@
 """Measure the gap between what a repository's CI claims to cover and what it runs.
 
-Two checks, both learned the hard way while auditing real repositories:
+Three checks, all learned the hard way while auditing real repositories:
 
 1. PLATFORM GAP - the repository builds or ships on an OS, but no job anywhere
    runs a test suite on that OS.
@@ -9,7 +9,15 @@ Two checks, both learned the hard way while auditing real repositories:
    test only covers that lane if somebody remembered to tag it. Nothing fails
    when the tagging step is skipped.
 
-Three corrections are baked in, each from a wrong answer this tool gave first:
+3. GATED TEST STEP - the job's only test step carries an `if:` that can switch
+   it off, so the job goes green under a name containing "test" while running
+   none. OpenHands/OpenHands#17148 is this shape: `test-and-build (windows)`
+   passes having run `npm ci` and `npm run build` and nothing else.
+
+ELEVEN corrections are baked in, each from a wrong answer this tool gave first
+and each pinned by a test - see README.md for the full table. The three below
+are the oldest; the newest is this file's own gated-step check, which produced
+nine false hits on its first run against the repository it was written for.
 
 * Reading one workflow file is not reading CI. An earlier manual audit reported
   a missing Windows job after opening only `ci.yml`; a separate
@@ -199,16 +207,29 @@ def _bramkowane(tresc: str) -> list[str]:
     """
     granice = [m.start() for m in POCZATEK_KROKU.finditer(tresc)]
     kandydaci: list[tuple[str, str]] = []      # (rdzen warunku, opis kroku)
+    wolny_test = False                          # test bez zadnego warunku
     for i, poz in enumerate(granice):
         koniec = granice[i + 1] if i + 1 < len(granice) else len(tresc)
         krok = tresc[poz:koniec]
-        if not URUCHAMIA_TESTY.search(krok):
+        if not any(_uruchamia_testy(l) for l in krok.splitlines()):
             continue
         m = WARUNEK_KROKU.search(krok)
         if not m or NIE_BRAMKUJE.match(m.group(1).strip()):
+            wolny_test = True
             continue
         kandydaci.append((_rdzen_warunku(m.group(1)),
                           " ".join(krok[:m.end() + 60].split())[:160]))
+
+    # Correction 10: a gate sitting next to an UNGATED test step is narrower
+    # coverage, not absent coverage. continuedev/continue runs `Run smoke
+    # tests` and `Run tests` unconditionally on [ubuntu, windows, macos] and
+    # only gates `Run e2e tests` off Windows - a normal and defensible choice,
+    # since e2e needs a TTY and is flaky there. OpenHands#17148 is the opposite
+    # shape: `- name: Test` is the ONLY test step in the job and it is gated,
+    # so switching it off leaves nothing. Conflating the two would make the
+    # check say "this platform is untested" about a platform that is tested.
+    if wolny_test:
+        return []
 
     # Drop every condition that appears more than once after negation is
     # stripped: that is `X` sitting next to `!X`, which together always run.
@@ -216,10 +237,29 @@ def _bramkowane(tresc: str) -> list[str]:
     return [opis for rdzen, opis in kandydaci if ile[rdzen] == 1]
 
 
+# Correction 11: `cat << 'EOF' > check_discussion.py` CREATES a file; it does
+# not run one. continuedev/continue writes exactly that in an issue-triage
+# workflow, and the filename pattern claimed it as a test step. The word
+# `check` is ambiguous - it means "code quality gate" in `check.sh` and "test
+# a condition" in `check_discussion.py` - so the deciding signal has to be
+# whether the name is being INVOKED, and a redirect target never is.
+PRZEKIEROWANIE = re.compile(r">>?\s*[\w./-]+")
+
+
+def _uruchamia_testy(linia: str) -> bool:
+    """True when the line runs tests, ignoring redirect targets.
+
+    Removing the redirect target keeps `pytest tests/ > out.txt` a test run
+    while dropping `cat <<EOF > check_x.py`, because in the first case the
+    match is in the command and in the second it is only in the filename.
+    """
+    return bool(URUCHAMIA_TESTY.search(PRZEKIEROWANIE.sub(" ", linia)))
+
+
 def _kroki_testowe_w(tresc: str) -> tuple[list[str], list[tuple[str, str]]]:
     kroki, filtry = [], []
     for linia in tresc.splitlines():
-        if URUCHAMIA_TESTY.search(linia) or NAZWA_KROKU_TESTOWEGO.search(linia):
+        if _uruchamia_testy(linia) or NAZWA_KROKU_TESTOWEGO.search(linia):
             kroki.append(linia.strip()[:160])
             for wzor, etykieta in FILTRUJE:
                 if wzor.search(linia):

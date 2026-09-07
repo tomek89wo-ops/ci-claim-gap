@@ -455,3 +455,75 @@ def test_filtr_nie_sklada_sie_z_dwoch_roznych_linii():
     blok = "        run: |\n          pytest tests/\n          grep -k foo bar\n"
     _, filtry = cg._kroki_testowe_w(blok)
     assert not any(e == "pytest -k" for e, _ in filtry), filtry
+
+
+# --- korekta 10: bramka obok NIEBRAMKOWANEGO testu to zawezenie, nie luka ---
+# continuedev/continue, zadanie `test` na macierzy [ubuntu, windows, macos]:
+#     - name: Run smoke tests        (bez warunku)
+#     - name: Run tests              (bez warunku)
+#     - name: Run e2e tests          if: matrix.os != 'windows-latest'
+# Windows JEST testowany — wylaczone sa wylacznie testy e2e, co jest zwykla
+# i uzasadniona praktyka (e2e potrzebuja TTY i sa chwiejne na Windows).
+#
+# OpenHands#17148 wyglada inaczej i o to chodzi: tam `- name: Test` jest
+# JEDYNYM krokiem testowym w zadaniu i jest bramkowany, wiec po jego wylaczeniu
+# nie zostaje nic. Bez tego rozroznienia kontrola myli "wezsze pokrycie"
+# z "zerowym pokryciem" — a to sa dwa rozne zdania o swiecie.
+
+ZAWEZENIE = """
+      - name: Run tests
+        run: npm test
+      - name: Run e2e tests
+        if: matrix.os != 'windows-latest'
+        run: npm run test:e2e
+"""
+
+LUKA = """
+      - name: Build app
+        run: npm run build
+      - name: Test
+        if: matrix.full_checks
+        run: npm test
+"""
+
+
+def test_bramka_obok_niebramkowanego_testu_to_NIE_luka():
+    assert not cg._bramkowane(ZAWEZENIE), (
+        "zadanie ma niebramkowany `npm test`, wiec platforma JEST testowana")
+
+
+def test_bramka_na_JEDYNYM_kroku_testowym_to_luka():
+    """OpenHands#17148 — po wylaczeniu nie zostaje zaden test."""
+    assert cg._bramkowane(LUKA)
+
+
+# --- korekta 11: przekierowanie tworzy plik, nie uruchamia go ---------------
+# continuedev/continue, workflow similar-issues.yml:
+#     cat << 'PYTHON_SCRIPT' > check_discussion.py
+# Wzorzec nazwy pliku zlapal `check_discussion.py`. To skrypt bota do issue
+# ("sprawdz, czy zgloszenie powinno byc dyskusja"), a nie test — i nie jest
+# w tej linii URUCHAMIANY, tylko TWORZONY. Slowo `check` jest dwuznaczne:
+# znaczy raz "kontrola jakosci kodu", raz "sprawdz warunek".
+
+def test_przekierowanie_do_pliku_nie_jest_uruchomieniem():
+    for linia in (
+        "          cat << 'PYTHON_SCRIPT' > check_discussion.py",
+        "        run: echo x >> test_helper.py",
+    ):
+        kroki, _ = cg._kroki_testowe_w(linia)
+        assert not kroki, f"tworzenie pliku uznane za uruchomienie: {linia}"
+
+
+def test_URUCHOMIENIE_skryptu_testowego_nadal_dziala():
+    """Regresja korekty 4: FastAPI wola `bash scripts/test-cov.sh`."""
+    for linia in ("run: bash scripts/test-cov.sh",
+                  "run: python scripts/run_tests.py",
+                  "run: ./check.sh"):
+        kroki, _ = cg._kroki_testowe_w(linia)
+        assert kroki, f"przestalo byc rozpoznawane: {linia}"
+
+
+def test_uruchomienie_obok_przekierowania_liczy_sie():
+    """`pytest > wynik.txt` to nadal uruchomienie testow."""
+    kroki, _ = cg._kroki_testowe_w("run: pytest tests/ > wyniki.txt")
+    assert kroki

@@ -83,6 +83,16 @@ A platform is therefore only reported as a gap when **no job in the repository**
 tests on it. A build-only job is not an accusation when another workflow covers
 the same OS.
 
+### A limit that pattern-matching cannot fix
+
+`check` is ambiguous, and the ambiguity is in English rather than in the regex.
+It means "quality gate" in `check.sh` and "test a condition" in
+`check_discussion.py` — an issue-triage script in `continuedev/continue` that
+this tool still reports. Dropping `check` from the filename pattern would clear
+that hit and simultaneously stop the tool recognising every genuine `check.sh`,
+which was correction 4. It is left in, and this paragraph is the honest
+disclosure rather than a silently tuned threshold.
+
 Validated against 25 widely-used repositories — see [SURVEY.md](SURVEY.md).
 Fifteen come back completely clean, and most of the remaining ten are describing
 deliberate configuration rather than a defect. That is the result that matters:
