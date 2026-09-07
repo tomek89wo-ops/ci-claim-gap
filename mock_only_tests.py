@@ -29,12 +29,32 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PATCHUJE = ("patch", "patch_object", "setattr")
+# Asserting WHICH collaborator ran, and with what. This is wiring.
 WYWOLANIE_ASERCJA = (
     "assert_called", "assert_called_once", "assert_called_with",
     "assert_called_once_with", "assert_any_call", "assert_has_calls",
-    "assert_not_called", "assert_awaited", "assert_awaited_once",
-    "assert_awaited_once_with",
+    "assert_awaited", "assert_awaited_once", "assert_awaited_once_with",
 )
+
+# Asserting that something did NOT happen is BEHAVIOUR, not wiring, and this
+# distinction cost a false positive on 2026-09-07. langchain has
+#
+#     def test_kill_process_returns_early_when_process_already_gone(...):
+#         monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError))
+#         session._kill_process()
+#         killpg_mock.assert_not_called()
+#         process.kill.assert_not_called()
+#
+# `_kill_process()` returns None; its product is a side effect. The test proves
+# that when the process is already gone, no signal is sent - and the ABSENCE of
+# that effect is the entire behaviour under test. There is no return value to
+# look at, so "zero value assertions" is not a defect here.
+#
+# The line is sharp: `assert_called_once_with(...)` asks WHO was called, which
+# a test can satisfy while the collaborators disagree about what they return.
+# `assert_not_called()` asks whether something happened at all, which is the
+# behaviour itself.
+BRAK_EFEKTU_ASERCJA = ("assert_not_called", "assert_not_awaited")
 
 
 @dataclass
@@ -67,6 +87,9 @@ class _Skaner(ast.NodeVisitor):
             self.patche += 1
         elif nazwa in WYWOLANIE_ASERCJA:
             self.asercje_wywolan += 1
+        elif nazwa in BRAK_EFEKTU_ASERCJA:
+            # Counted as looking at behaviour: see BRAK_EFEKTU_ASERCJA above.
+            self.asercje_wartosci += 1
         self.generic_visit(node)
 
     def visit_Assert(self, node: ast.Assert) -> None:

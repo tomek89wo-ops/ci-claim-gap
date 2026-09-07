@@ -144,3 +144,60 @@ def test_prog_atrap_jest_konfigurowalny(tmp_path):
     p.write_text(textwrap.dedent(kod), encoding="utf-8")
     assert m.zbadaj_plik(p, min_patchy=2) == []
     assert len(m.zbadaj_plik(p, min_patchy=1)) == 1
+
+
+# --- korekta: `assert_not_called` to asercja ZACHOWANIA, nie okablowania ----
+# Zmierzone 2026-09-07 na langchain (581 plikow testowych, jedno trafienie):
+#
+#     def test_kill_process_returns_early_when_process_already_gone(...):
+#         monkeypatch.setattr(os, "getpgid", Mock(side_effect=ProcessLookupError))
+#         session._kill_process()
+#         killpg_mock.assert_not_called()
+#         process.kill.assert_not_called()
+#
+# `_kill_process()` zwraca None; jej produktem jest EFEKT UBOCZNY. Test
+# sprawdza, ze gdy proces juz nie zyje, zaden sygnal nie zostaje wyslany —
+# i BRAK tego efektu jest calym testowanym zachowaniem. Nie ma tam wartosci
+# do sprawdzenia, wiec "zero asercji wartosci" nie jest usterka.
+#
+# Rozroznienie jest ostre:
+#   assert_called_once_with(...)  -> KTO zostal zawolany = okablowanie
+#   assert_not_called()           -> ze czegos NIE zrobiono = zachowanie
+
+def test_assert_not_called_nie_liczy_sie_jako_okablowanie(tmp_path):
+    p = tmp_path / "test_x.py"
+    p.write_text(
+        "from unittest.mock import Mock, patch\n"
+        "def test_nic_sie_nie_dzieje(monkeypatch):\n"
+        "    a = Mock(); b = Mock()\n"
+        "    monkeypatch.setattr(mod, 'x', a)\n"
+        "    monkeypatch.setattr(mod, 'y', b)\n"
+        "    mod.zrob()\n"
+        "    a.assert_not_called()\n"
+        "    b.assert_not_called()\n",
+        encoding="utf-8")
+    assert not m.zbadaj_plik(p), (
+        "test sprawdzajacy, ze NIC sie nie stalo, bada zachowanie")
+
+
+def test_assert_called_with_nadal_liczy_sie_jako_okablowanie(tmp_path):
+    """Regresja: przypadek, dla ktorego to narzedzie powstalo (guardrails
+    #1633) musi nadal byc zglaszany.
+
+    Pierwsza wersja tego testu mieszala w jednym przykladzie
+    `assert_called_once_with` z `assert_not_called` i po korekcie przestala
+    byc zglaszana — SLUSZNIE, bo taki test PATRZY na zachowanie. Poprawiony
+    zostal przyklad, nie kod. Ksztalt z #1633 jest czystszy: same asercje
+    wywolan, zero spojrzen na wynik."""
+    p = tmp_path / "test_y.py"
+    p.write_text(
+        "from unittest.mock import Mock, patch\n"
+        "def test_ktory_serwis(mocker):\n"
+        "    mocker.patch('mod.A')\n"
+        "    mocker.patch('mod.B')\n"
+        "    mod.dispatch()\n"
+        "    mod.A.assert_called_once_with(True)\n"
+        "    mod.B.assert_any_call(True)\n",
+        encoding="utf-8")
+    assert m.zbadaj_plik(p), (
+        "assert_called_once_with pyta KTO zostal zawolany — to okablowanie")
