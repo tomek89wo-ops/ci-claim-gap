@@ -1,5 +1,17 @@
 # Survey: 25 widely-used repositories
 
+> **Update 2026-09-07.** Twenty more repositories were scanned since this
+> survey — see [SKAN_2026-09-06.md](SKAN_2026-09-06.md) for the batch and
+> [SKAN_2026-09-07.md](SKAN_2026-09-07.md) for what the two new checks found.
+> **Forty-five in total, and exactly one finding worth reporting**
+> ([OpenHands/OpenHands#17148](https://github.com/OpenHands/OpenHands/issues/17148)).
+>
+> The results below were produced before corrections 7–16. Three of those
+> corrections changed answers for repositories in this very table — `astral-sh/uv`
+> and `astral-sh/ruff` were rescanned and come back clean, and the tool had been
+> blind to `cargo nextest`, which is most of modern Rust. Treat the numbers here
+> as the state on 2026-09-04, not as current.
+
 Run on 2026-09-04 with the checks in this repository. The headline is not the
 list of findings — it is that **15 of 25 come back completely clean**, and that
 most of the remaining ten are describing deliberate configuration rather than a
