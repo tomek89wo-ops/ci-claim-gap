@@ -253,3 +253,116 @@ def test_task_runner_bez_zadania_testowego_nie_liczy_sie():
     for polecenie in ("run: poe build", "run: invoke docs", "run: task deploy"):
         kroki, _ = cg._kroki_testowe_w(polecenie)
         assert not kroki, f"blednie uznane za test: {polecenie}"
+
+
+# --- korekta 7: test w NAZWIE kroku, nie w komendzie -------------------------
+# Zmierzone 2026-09-06 na dwoch repozytoriach naraz: vLLM ma
+# `- name: Smoke test vllm serve` z `run: vllm serve ...`, a browser-use
+# `- name: Set up venv and test for OS/Python versions`. Oba zostaly zgloszone
+# jako luka platformy, bo wzorzec czyta KOMENDE, a slowo "test" bylo w NAZWIE.
+
+def test_nazwa_kroku_z_testem_liczy_sie_jako_test():
+    for linia in (
+        "      - name: Smoke test vllm serve",
+        "      - name: Set up venv and test for OS/Python versions",
+        "      - name: Run integration tests",
+        "      - name: Test",
+    ):
+        kroki, _ = cg._kroki_testowe_w(linia)
+        assert kroki, f"nie rozpoznano jako testu: {linia}"
+
+
+def test_checkout_NIE_jest_testem():
+    """Najgrozniejszy falszywy pozytyw tej korekty: `- name: Check out
+    repository` jest w KAZDYM workflow. Dlatego nazwa kroku uznaje wylacznie
+    slowo `test`, nigdy `check`."""
+    for linia in (
+        "      - name: Check out repository",
+        "      - name: Checkout",
+        "      - name: Check formatting",
+    ):
+        kroki, _ = cg._kroki_testowe_w(linia)
+        assert not kroki, f"blednie uznane za test: {linia}"
+
+
+def test_latest_w_nazwie_kroku_nie_jest_testem():
+    """`Latest` zawiera litery `test`. Granica slowa musi to odciac —
+    ta sama pulapka co `latest.py` w korekcie 3."""
+    kroki, _ = cg._kroki_testowe_w("      - name: Download latest release")
+    assert not kroki
+
+
+# --- korekta 8: krok testowy WYLACZONY warunkiem `if:` ----------------------
+# OpenHands/OpenHands#17148: zadanie `test-and-build` chodzi na macierzy
+# [ubuntu, windows], ale kroki Lint/Test/Build-library maja `if:
+# matrix.full_checks`, a windows ma `full_checks: false`. Zadanie swieci na
+# zielono pod nazwa "test-and-build" i NIE URUCHAMIA ANI JEDNEGO TESTU.
+#
+# Bez tej kontroli korekta 7 byłaby REGRESJA: rozpoznanie `- name: Test`
+# sprawiloby, ze narzedzie uznaje zadanie za testujace i przestaje zglaszac
+# luke, ktora jest PRAWDZIWA.
+
+KROK_ZA_BRAMKA = """
+      - name: Test
+        if: matrix.full_checks
+        run: npm test
+"""
+
+KROK_BEZ_BRAMKI = """
+      - name: Test
+        run: npm test
+"""
+
+
+def test_krok_testowy_za_bramka_if_jest_oznaczony():
+    kroki, _ = cg._kroki_testowe_w(KROK_ZA_BRAMKA)
+    assert kroki, "krok nadal ma byc widziany jako testowy"
+    assert cg._bramkowane(KROK_ZA_BRAMKA), (
+        "krok testowy z `if:` musi byc zgloszony — inaczej zadanie o nazwie "
+        "'test-and-build' liczy sie jako testujace, choc test jest wylaczony")
+
+
+def test_krok_testowy_bez_bramki_nie_jest_oznaczony():
+    assert not cg._bramkowane(KROK_BEZ_BRAMKI)
+
+
+def test_bramka_na_kroku_NIETESTOWYM_nie_liczy_sie():
+    """`if:` na kroku budujacym jest zwyklym warunkiem, nie ukryciem testu."""
+    blok = "      - name: Upload artifact\n        if: always()\n        run: gh release upload x\n"
+    assert not cg._bramkowane(blok)
+
+
+# --- korekta 8b: wlasny falszywy alarm korekty 8 ----------------------------
+# Pierwsza wersja `_bramkowane` zglosila w OpenHands dziesiec krokow, z czego
+# JEDEN byl prawdziwy. Dwa bledy naraz, oba zmierzone 2026-09-07:
+#
+#   1. `if: always()` NIE JEST bramka — to jej odwrotnosc. Znaczy "uruchom
+#      nawet gdy poprzedni krok padl". Zgloszenie go jako wylacznika jest
+#      dokladnie odwrotne do prawdy.
+#   2. "test" w nazwie wystarczalo, wiec `- name: Upload test artifacts`
+#      i `- name: Render test report` liczyly sie jako kroki testowe. To sa
+#      kroki obslugujace WYNIK testu, nie uruchamiajace go.
+
+def test_always_NIE_jest_bramka():
+    """`always()` wymusza uruchomienie, wiec nie moze byc powodem alarmu."""
+    for warunek in ("if: always()", "if: ${{ always() }}", "if: success()",
+                    "if: ${{ !cancelled() }}"):
+        blok = f"      - name: Test\n        {warunek}\n        run: npm test\n"
+        assert not cg._bramkowane(blok), f"{warunek} nie wylacza kroku"
+
+
+def test_upload_artefaktow_testowych_nie_jest_krokiem_testowym():
+    """`- name: Upload test artifacts` obsluguje WYNIK testu. Bramka na nim
+    nie mowi nic o tym, czy testy sie uruchomily."""
+    for nazwa in ("Upload test artifacts", "Render test report",
+                  "Resolve affected test directories"):
+        blok = (f"      - name: {nazwa}\n        if: matrix.full_checks\n"
+                f"        uses: actions/upload-artifact@v7\n")
+        assert not cg._bramkowane(blok), f"blednie zgloszone: {nazwa}"
+
+
+def test_prawdziwa_bramka_nadal_lapana():
+    """Regresja wprost: OpenHands#17148 musi przezyc obie poprawki."""
+    blok = ("      - name: Test\n        if: matrix.full_checks\n"
+            "        run: npm test\n")
+    assert cg._bramkowane(blok)

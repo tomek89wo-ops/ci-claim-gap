@@ -117,12 +117,72 @@ class Zadanie:
     filtry: list[tuple[str, str]] = field(default_factory=list)
     wywoluje: str | None = None          # delegacja do innego workflow
     testuje_przez_wywolanie: bool = False
+    bramkowane: list[str] = field(default_factory=list)   # korekta 8
+
+
+# Correction 7: the word `test` can live in the step NAME rather than in the
+# command. vLLM runs `- name: Smoke test vllm serve` with `run: vllm serve ...`,
+# and browser-use has `- name: Set up venv and test for OS/Python versions`;
+# both were reported as platform gaps by a pattern that only reads commands.
+#
+# Only `test` is accepted here, never `check`: `- name: Check out repository`
+# opens virtually every workflow in existence, and accepting `check` would make
+# the checkout step itself look like a test suite.
+NAZWA_KROKU_TESTOWEGO = re.compile(r"^\s*-?\s*name:.*\btest", re.I)
+
+# Correction 8: a test step that exists but is switched off by a condition.
+# OpenHands/OpenHands#17148 - job `test-and-build` runs on [ubuntu, windows],
+# but `Lint`, `Test` and `Build library` carry `if: matrix.full_checks`, and the
+# Windows lane sets `full_checks: false`. The job goes green under a name
+# containing the word "test" and runs no test at all.
+#
+# This check exists because correction 7 would otherwise be a REGRESSION:
+# recognising `- name: Test` makes the job look tested, hiding a gap that is
+# real. The two corrections only make sense together.
+POCZATEK_KROKU = re.compile(r"^\s*-\s+(?:name|uses|run):", re.M)
+WARUNEK_KROKU = re.compile(r"^\s*if:\s*(\S.*)$", re.M)
+
+# Correction 8b, measured on this check's own first run against OpenHands: it
+# reported ten steps, of which exactly one was real. Two mistakes, both mine.
+#
+# `always()` is the OPPOSITE of a gate - it means "run even if an earlier step
+# failed". Reporting it as a switch-off is precisely backwards. Same for
+# `success()` and `!cancelled()`: none of them can turn a step off on one lane
+# and leave it on for another, which is the whole shape this check looks for.
+NIE_BRAMKUJE = re.compile(r"^\W*(?:always|success|!\s*cancelled)\s*\(\s*\)\W*$")
+
+
+def _bramkowane(tresc: str) -> list[str]:
+    """Return the test steps that are gated behind an `if:` condition.
+
+    Splits on step boundaries rather than scanning lines, because `if:` belongs
+    to whichever step it sits under - a line-by-line scan cannot tell whose
+    condition it is.
+
+    A step counts only when its COMMAND runs tests, never when the word "test"
+    merely appears in its name: `Upload test artifacts` and `Render test report`
+    handle a test's OUTPUT, and a condition on them says nothing about whether
+    the suite ran. That distinction is what separates OpenHands#17148 (real)
+    from the nine false hits this check produced on its first run.
+    """
+    granice = [m.start() for m in POCZATEK_KROKU.finditer(tresc)]
+    out: list[str] = []
+    for i, poz in enumerate(granice):
+        koniec = granice[i + 1] if i + 1 < len(granice) else len(tresc)
+        krok = tresc[poz:koniec]
+        if not URUCHAMIA_TESTY.search(krok):
+            continue
+        m = WARUNEK_KROKU.search(krok)
+        if not m or NIE_BRAMKUJE.match(m.group(1).strip()):
+            continue
+        out.append(" ".join(krok[:m.end() + 60].split())[:160])
+    return out
 
 
 def _kroki_testowe_w(tresc: str) -> tuple[list[str], list[tuple[str, str]]]:
     kroki, filtry = [], []
     for linia in tresc.splitlines():
-        if URUCHAMIA_TESTY.search(linia):
+        if URUCHAMIA_TESTY.search(linia) or NAZWA_KROKU_TESTOWEGO.search(linia):
             kroki.append(linia.strip()[:160])
             for wzor, etykieta in FILTRUJE:
                 if wzor.search(linia):
@@ -148,6 +208,7 @@ def _rozbij_zadania(tresc: str, plik: str) -> list[Zadanie]:
         z = Zadanie(plik=plik, nazwa=nazwa)
         z.systemy = sorted({s.lower() for s in NIE_LINUX.findall(blok)})
         z.kroki_testowe, z.filtry = _kroki_testowe_w(blok)
+        z.bramkowane = _bramkowane(blok)
         m_uses = WYWOLANIE_LOKALNE.search(blok)
         if m_uses:
             z.wywoluje = m_uses.group(1)
@@ -210,6 +271,11 @@ def zbadaj(repo: str, token: str | None) -> dict:
                            "filtr": etykieta, "krok": linia,
                            "przez_wywolanie": z.testuje_przez_wywolanie})
 
+    bramkowane = [
+        {"plik": z.plik, "zadanie": z.nazwa, "systemy": z.systemy, "krok": k}
+        for z in zadania for k in z.bramkowane
+    ]
+
     return {
         "repo": repo,
         "workflowow": len(tresci),
@@ -218,6 +284,7 @@ def zbadaj(repo: str, token: str | None) -> dict:
         "systemy_z_testami": sorted(systemy_z_testami),
         "luki_platform": [{"system": s, "wspomniany_w": gdzie_wspomniane[s]} for s in luki],
         "opt_in": opt_in,
+        "bramkowane": bramkowane,
     }
 
 
@@ -241,7 +308,16 @@ def _wypisz(w: dict) -> None:
             przez = " (via reusable workflow)" if o["przez_wywolanie"] else ""
             print(f"    {o['plik']} :: {o['zadanie']} ({gdzie}){przez}  [{o['filtr']}]")
             print(f"      {o['krok']}")
-    if not w["luki_platform"] and not w["opt_in"]:
+    if w.get("bramkowane"):
+        print("  GATED TEST STEP - the step exists but a condition can switch it off,")
+        print("  so the job can go green under a name containing \"test\":")
+        for b in w["bramkowane"][:8]:
+            gdzie = ", ".join(b["systemy"]) or "linux"
+            print(f"    {b['plik']} :: {b['zadanie']} ({gdzie})")
+            print(f"      {b['krok']}")
+        if len(w["bramkowane"]) > 8:
+            print(f"    ... and {len(w['bramkowane']) - 8} more")
+    if not w["luki_platform"] and not w["opt_in"] and not w.get("bramkowane"):
         print("  nothing found")
 
 

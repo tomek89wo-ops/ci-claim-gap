@@ -47,9 +47,9 @@ tracker before you report anything to anyone.
 That warning is not boilerplate. It exists because the author reported a missing
 Windows job in a public repository after reading only `ci.yml`, and was wrong.
 
-## Three corrections, each now a test
+## Nine corrections, each now a test
 
-This tool gave a wrong answer three times before it gave a useful one. Each
+This tool gave a wrong answer nine times before it gave a useful one. Each
 mistake is pinned by a test in `test_ci_claim_gap.py`, so the suite is a record
 of what it got wrong rather than a restatement of what the code does.
 
@@ -61,10 +61,22 @@ of what it got wrong rather than a restatement of what the code does.
 | FastAPI and Typer as untested on Windows and macOS | Their test step is `bash scripts/test-cov.sh` | Recognise script and `make` targets as test runners |
 | cc-safety-net's platform gap as still open, on the day it was closed | The new jobs call `bun run check:ci` | Recognise package scripts as test runners |
 | microsoft/autogen as untested on Windows, in a job named `test-autogen-ext-pwsh` | Its step is `poe ... test-windows` | Recognise task runners with named tasks |
+| vLLM as untested on macOS | Its step is `- name: Smoke test vllm serve`, running `vllm serve` | Read the step NAME, not only the command — but accept `test` there, never `check`, or every `Check out repository` becomes a test suite |
+| browser-use as untested on Windows and macOS | `- name: Set up venv and test for OS/Python versions`, on a three-OS matrix | Same fix; two repositories hit the same blind spot on the same day |
+| Ten gated steps in OpenHands, of which one was real | `if: always()` is the *opposite* of a gate, and `Upload test artifacts` handles a test's output rather than running it | A gate counts only when the step's COMMAND runs tests, and never for `always()` / `success()` / `!cancelled()` |
 
-The last two matter most. A tool that accuses a project of skipping tests
-when that project is doing it correctly is worse than no tool, because it costs
-the reader the one thing it was supposed to save: trust in the report.
+The last three matter most, and the last one is this tool marking its own
+homework: the gated-step check produced nine false hits on its own first run,
+against the very repository it was written for. A tool that accuses a project of
+skipping tests when that project is doing it correctly is worse than no tool,
+because it costs the reader the one thing it was supposed to save: trust in the
+report.
+
+Measured honestly: on a batch of twelve fresh repositories scanned on
+2026-09-06, the platform-gap check produced **three false positives out of four
+hits** before these corrections — and all three were the same shape, "a test I
+do not recognise as a test". That number is in
+[SKAN_2026-09-06.md](SKAN_2026-09-06.md) rather than rounded away.
 
 A platform is therefore only reported as a gap when **no job in the repository**
 tests on it. A build-only job is not an accusation when another workflow covers
@@ -74,6 +86,27 @@ Validated against 25 widely-used repositories — see [SURVEY.md](SURVEY.md).
 Fifteen come back completely clean, and most of the remaining ten are describing
 deliberate configuration rather than a defect. That is the result that matters:
 a tool that finds something everywhere is finding nothing.
+
+## Gated test steps: the job goes green and runs nothing
+
+Reported alongside platform gaps by the same command. A step that runs tests but
+carries an `if:` condition can be switched off on one lane while the job keeps
+its name and its green tick.
+
+`OpenHands/OpenHands` (86k stars) runs `test-and-build` on
+`[ubuntu-24.04, windows-latest]`, and its `Lint`, `Test`, `Build library` and
+`Verify package contents` steps all carry `if: matrix.full_checks`. The Windows
+lane sets `full_checks: false`. So `test-and-build (windows)` passes on every
+pull request while running `npm ci` and `npm run build` and not one test — and
+the project ships a Windows `.exe` and a macOS `.dmg` built by workflows that
+only build. Reported as
+[#17148](https://github.com/OpenHands/OpenHands/issues/17148).
+
+The check deliberately ignores `always()`, `success()` and `!cancelled()`: those
+force a step to run rather than skip it, so reporting them as gates would be
+exactly backwards. It also requires the step's command to run tests, because
+`Upload test artifacts` and `Render test report` handle a suite's output and say
+nothing about whether it ran.
 
 ## A second check: tests that assert wiring instead of behaviour
 
