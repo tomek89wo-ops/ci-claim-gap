@@ -23,7 +23,7 @@ All four share one shape: a mechanism that has to be REMEMBERED rather than
 enforced. Nothing breaks when someone forgets; the signal quietly stops
 meaning anything.
 
-SIXTEEN corrections are baked in, each from a wrong answer this tool gave
+EIGHTEEN corrections are baked in, each from a wrong answer this tool gave
 first and each pinned by a test - see README.md for the full table. The three
 below are the oldest. Two of the newest came from a single repository: zed was
 reported as testing on Linux only, with gaps on Windows and macOS, while
@@ -221,6 +221,22 @@ WARUNEK_KROKU = re.compile(r"^\s*if:\s*(\S.*)$", re.M)
 # and leave it on for another, which is the whole shape this check looks for.
 NIE_BRAMKUJE = re.compile(r"^\W*(?:always|success|!\s*cancelled)\s*\(\s*\)\W*$")
 
+# Correction 18: a condition on `inputs.` is a PARAMETER, not a hidden switch.
+# microsoft/vscode's `pr-darwin-test.yml :: macOS-test` has six test steps, all
+# gated on `if: ${{ inputs.unit_tests && ... }}` - which looks like a job that
+# can be switched off whole. `pr.yml` calls that workflow repeatedly with
+# different subsets:
+#
+#     job_name: Electron-Unit   electron_tests: true, integration_tests: false
+#     job_name: Electron        electron_tests: true, unit_tests: false
+#     job_name: Electron-Smoke  ...
+#
+# Together they cover everything: it is a split into parallel jobs, which is
+# good practice rather than a gap. Whether anything is actually disabled
+# depends on the CALLERS, and this tool does not read them - so it must not
+# accuse. `matrix.` and `needs.` stay reportable: those are internal to the job.
+BRAMKA_ZEWNETRZNA = re.compile(r"\binputs\.", re.I)
+
 # Correction 8c, measured across eight repositories on 2026-09-07: the dominant
 # false positive is a COMPLEMENTARY PAIR. pydantic and psf/black both run
 #
@@ -317,7 +333,8 @@ def _bramkowane(tresc: str) -> list[str]:
         if not any(_uruchamia_testy(l) for l in krok.splitlines()):
             continue
         m = WARUNEK_KROKU.search(krok)
-        if not m or NIE_BRAMKUJE.match(m.group(1).strip()):
+        if (not m or NIE_BRAMKUJE.match(m.group(1).strip())
+                or BRAMKA_ZEWNETRZNA.search(m.group(1))):
             wolny_test = True
             continue
         kandydaci.append((_rdzen_warunku(m.group(1)),

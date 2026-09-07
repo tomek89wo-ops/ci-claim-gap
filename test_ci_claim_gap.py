@@ -769,3 +769,43 @@ def test_emoji_w_kroku_nie_wywraca_wypisywania(monkeypatch):
 def test_emoji_w_nazwie_repo_tez_przechodzi(monkeypatch):
     monkeypatch.setattr(sys, "stdout", _konsola_cp1250())
     cg._wypisz({"repo": "x/✨y", "blad": "HTTP 404"})
+
+
+# --- korekta 18: bramka na `inputs.` w reusable workflow ---------------------
+# microsoft/vscode, `pr-darwin-test.yml :: macOS-test`: SZESC krokow testowych,
+# kazdy bramkowany przez `if: ${{ inputs.unit_tests && ... }}`. Wyglada jak
+# zadanie, ktore da sie wylaczyc w calosci.
+#
+# `pr.yml` wywoluje ten workflow WIELOKROTNIE, za kazdym razem z innym
+# podzbiorem:
+#     job_name: Electron-Unit   electron_tests: true, integration: false
+#     job_name: Electron        electron_tests: true, unit_tests: false
+#     job_name: Electron-Smoke  ...
+# Razem pokrywaja calosc — to jest rozbicie na rownolegle zadania, czyli DOBRA
+# praktyka, a nie ukryty wylacznik.
+#
+# Reguła: warunek odwolujacy sie do `inputs.` jest PARAMETREM sterowanym przez
+# wywolujacego, nie bramka wewnetrzna. Bez sprawdzenia wywolujacych nie da sie
+# orzec, czy cokolwiek jest wylaczone — a narzedzie ich nie czyta.
+
+def test_bramka_na_inputs_nie_jest_zgłaszana():
+    blok = ("      - name: Run unit tests\n"
+            "        if: ${{ inputs.unit_tests && inputs.electron_tests }}\n"
+            "        run: npm run test-node\n")
+    assert not cg._bramkowane(blok), (
+        "`inputs.` steruje wywolujacy — to parametr, nie ukryta bramka")
+
+
+def test_bramka_na_matrix_NADAL_jest_zgłaszana():
+    """Regresja OpenHands#17148: `matrix.` jest wewnetrzne dla zadania,
+    wiec nadal liczy sie jako bramka."""
+    blok = ("      - name: Test\n        if: matrix.full_checks\n"
+            "        run: npm test\n")
+    assert cg._bramkowane(blok)
+
+
+def test_bramka_na_needs_nadal_jest_zgłaszana():
+    blok = ("      - name: Test\n"
+            "        if: needs.changes.outputs.src == 'true'\n"
+            "        run: pytest\n")
+    assert cg._bramkowane(blok)
