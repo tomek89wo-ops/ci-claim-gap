@@ -479,46 +479,71 @@ def zbadaj(repo: str, token: str | None) -> dict:
     }
 
 
+# Correction 17: the tool CRASHED MID-REPORT on 2026-09-07, scanning
+# microsoft/vscode:
+#
+#     UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f9ea'
+#
+# A step there is named "🧪 Run tests", the Windows console encodes in cp1250,
+# and `print` took down the whole run partway through a list of repositories.
+# Results before vscode were printed; results after it never were. A tool for
+# finding silent failures, failing silently in the middle of its own report.
+#
+# Worse: piped through `tail`, the shell reported exit code 0, so a script
+# looping over repositories would have counted that run as a success.
+#
+# Workflow authors put emoji in step names routinely. The report must survive
+# any console encoding, so unrepresentable characters degrade to a marker
+# rather than ending the run.
+def _bezpiecznie(tekst: str) -> str:
+    kod = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        tekst.encode(kod)
+        return tekst
+    except (UnicodeEncodeError, LookupError):
+        return tekst.encode(kod, "replace").decode(kod, "replace")
+
+
 def _wypisz(w: dict) -> None:
     if "blad" in w:
-        print(f"\n{w['repo']}\n  {w['blad']}")
+        print(_bezpiecznie(f"\n{w['repo']}\n  {w['blad']}"))
         return
-    print(f"\n{w['repo']}")
+    print(_bezpiecznie(f"\n{w['repo']}"))
     print(f"  workflows: {w['workflowow']}   jobs: {w['zadan']}"
           f"   delegating: {w['delegujacych']}")
-    print(f"  tests run on: {w['systemy_z_testami'] or ['linux only']}")
+    print(_bezpiecznie(f"  tests run on: {w['systemy_z_testami'] or ['linux only']}"))
 
     if w["luki_platform"]:
-        print("  PLATFORM GAP - the OS appears in CI, but no job anywhere tests on it:")
+        print(_bezpiecznie("  PLATFORM GAP - the OS appears in CI, but no job anywhere tests on it:"))
         for l in w["luki_platform"]:
-            print(f"    {l['system']}  (appears in: {', '.join(l['wspomniany_w'])})")
+            print(_bezpiecznie(f"    {l['system']}  (appears in: {', '.join(l['wspomniany_w'])})"))
     if w["opt_in"]:
-        print("  OPT-IN COVERAGE - the test step is filtered, so it covers only tagged tests:")
+        print(_bezpiecznie("  OPT-IN COVERAGE - the test step is filtered, so it covers only tagged tests:"))
         for o in w["opt_in"]:
             gdzie = ", ".join(o["systemy"]) or "linux"
             przez = " (via reusable workflow)" if o["przez_wywolanie"] else ""
-            print(f"    {o['plik']} :: {o['zadanie']} ({gdzie}){przez}  [{o['filtr']}]")
-            print(f"      {o['krok']}")
+            print(_bezpiecznie(f"    {o['plik']} :: {o['zadanie']} ({gdzie}){przez}  [{o['filtr']}]"))
+            print(_bezpiecznie(f"      {o['krok']}"))
     if w.get("bramkowane"):
-        print("  GATED TEST STEP - the step exists but a condition can switch it off,")
-        print("  so the job can go green under a name containing \"test\":")
+        print(_bezpiecznie("  GATED TEST STEP - the step exists but a condition can switch it off,"))
+        print(_bezpiecznie("  so the job can go green under a name containing \"test\":"))
         for b in w["bramkowane"][:8]:
             gdzie = ", ".join(b["systemy"]) or "linux"
-            print(f"    {b['plik']} :: {b['zadanie']} ({gdzie})")
-            print(f"      {b['krok']}")
+            print(_bezpiecznie(f"    {b['plik']} :: {b['zadanie']} ({gdzie})"))
+            print(_bezpiecznie(f"      {b['krok']}"))
         if len(w["bramkowane"]) > 8:
-            print(f"    ... and {len(w['bramkowane']) - 8} more")
+            print(_bezpiecznie(f"    ... and {len(w['bramkowane']) - 8} more"))
     if w.get("polykane"):
-        print("  SWALLOWED FAILURE - the test step runs but cannot fail the job,")
-        print("  so a green tick says nothing about whether tests passed:")
+        print(_bezpiecznie("  SWALLOWED FAILURE - the test step runs but cannot fail the job,"))
+        print(_bezpiecznie("  so a green tick says nothing about whether tests passed:"))
         for p in w["polykane"][:6]:
             gdzie = ", ".join(p["systemy"]) or "linux"
-            print(f"    {p['plik']} :: {p['zadanie']} ({gdzie})")
+            print(_bezpiecznie(f"    {p['plik']} :: {p['zadanie']} ({gdzie})"))
         if len(w["polykane"]) > 6:
-            print(f"    ... and {len(w['polykane']) - 6} more")
+            print(_bezpiecznie(f"    ... and {len(w['polykane']) - 6} more"))
     if (not w["luki_platform"] and not w["opt_in"]
             and not w.get("bramkowane") and not w.get("polykane")):
-        print("  nothing found")
+        print(_bezpiecznie("  nothing found"))
 
 
 def main() -> int:

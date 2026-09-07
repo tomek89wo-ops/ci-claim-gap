@@ -725,3 +725,47 @@ def test_nazwa_zadania_tez_sie_liczy():
     assert cg._zbiera_dane("ci.yml", "set-matrix")
     assert cg._zbiera_dane("ci.yml", "generate-durations")
     assert not cg._zbiera_dane("ci.yml", "test-and-build")
+
+
+# --- korekta 17: narzedzie WYWRACALO SIE na emoji w kroku -------------------
+# Zmierzone 2026-09-07 na microsoft/vscode:
+#
+#     UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f9ea'
+#
+# Krok nazywa sie "🧪 Run tests", konsola Windows uzywa cp1250, a `print`
+# wywrocil caly skan W POLOWIE listy repozytoriow. Wyniki repo przed vscode
+# zdazyly sie wypisac, wyniki po nim — nigdy. Narzedzie do wykrywania cichych
+# awarii padajace po cichu w srodku raportu to najgorszy mozliwy wariant.
+#
+# Gorzej: przy `| tail` powloka zwrocila kod 0, wiec skrypt wolajacy to
+# w petli uznalby przebieg za udany.
+
+import io
+import sys
+
+
+def _konsola_cp1250():
+    """Strumien zachowujacy sie jak konsola Windows w cp1250.
+
+    `capsys` nie odtworzy tej awarii — pytest przechwytuje stdout jako UTF-8,
+    wiec test na nim przechodzi na kodzie, ktory w prawdziwej konsoli pada.
+    Pierwsza wersja tych dwoch testow byla wlasnie taka i przeszla na
+    niezmienionym, wadliwym kodzie.
+    """
+    return io.TextIOWrapper(io.BytesIO(), encoding="cp1250", errors="strict")
+
+
+def test_emoji_w_kroku_nie_wywraca_wypisywania(monkeypatch):
+    w = {"repo": "x/y", "workflowow": 1, "zadan": 1, "delegujacych": 0,
+         "systemy_z_testami": [], "luki_platform": [], "opt_in": [],
+         "bramkowane": [{"plik": "ci.yml", "zadanie": "test",
+                         "systemy": ["windows"],
+                         "krok": "- name: 🧪 Run tests if: matrix.slow"}],
+         "polykane": []}
+    monkeypatch.setattr(sys, "stdout", _konsola_cp1250())
+    cg._wypisz(w)                      # nie moze rzucic UnicodeEncodeError
+
+
+def test_emoji_w_nazwie_repo_tez_przechodzi(monkeypatch):
+    monkeypatch.setattr(sys, "stdout", _konsola_cp1250())
+    cg._wypisz({"repo": "x/✨y", "blad": "HTTP 404"})
