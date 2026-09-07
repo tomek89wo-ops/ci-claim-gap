@@ -1,7 +1,7 @@
 # ci-claim-gap
 
-Finds two specific gaps between what a repository's CI appears to cover and what
-it actually runs.
+Finds four specific gaps between what a repository's CI appears to cover and
+what it actually runs.
 
 **1. Platform gap** — an OS appears in CI (a build matrix, a wheel target, a
 runner) but no job anywhere in the repository runs a test suite on it. The
@@ -10,6 +10,18 @@ project ships for that platform and never tests there.
 **2. Opt-in coverage** — a test step exists but is filtered by name or marker,
 so a test only reaches that lane if somebody remembered to tag it. Nothing fails
 when the tagging step is skipped, so coverage silently decays as tests are added.
+
+**3. Gated test step** — the job's only test step carries an `if:` that can
+switch it off, so the job passes under a name containing "test" while running
+none of them.
+
+**4. Swallowed failure** — the test step runs but cannot fail the job
+(`|| true`, `continue-on-error: true`), so the green tick carries no
+information about whether the suite passed.
+
+All four share one shape: **a mechanism that has to be remembered rather than
+enforced.** Nothing breaks when someone forgets; the signal just quietly stops
+meaning anything.
 
 ```
 python ci_claim_gap.py owner/repo [owner/repo ...]

@@ -1,6 +1,6 @@
 """Measure the gap between what a repository's CI claims to cover and what it runs.
 
-Three checks, all learned the hard way while auditing real repositories:
+Four checks, all learned the hard way while auditing real repositories:
 
 1. PLATFORM GAP - the repository builds or ships on an OS, but no job anywhere
    runs a test suite on that OS.
@@ -14,9 +14,18 @@ Three checks, all learned the hard way while auditing real repositories:
    none. OpenHands/OpenHands#17148 is this shape: `test-and-build (windows)`
    passes having run `npm ci` and `npm run build` and nothing else.
 
-THIRTEEN corrections are baked in, each from a wrong answer this tool gave
+4. SWALLOWED FAILURE - the test step runs but cannot fail the job (`|| true`,
+   `continue-on-error: true`), so the green tick carries no information about
+   whether the suite passed. withastro/astro runs
+   `pnpm test || echo "...not failing CI."`.
+
+All four share one shape: a mechanism that has to be REMEMBERED rather than
+enforced. Nothing breaks when someone forgets; the signal quietly stops
+meaning anything.
+
+FIFTEEN corrections are baked in, each from a wrong answer this tool gave
 first and each pinned by a test - see README.md for the full table. The three
-below are the oldest. The newest two came from a single repository: zed was
+below are the oldest. Two of the newest came from a single repository: zed was
 reported as testing on Linux only, with gaps on Windows and macOS, while
 running three full test jobs - because `cargo nextest run` was not recognised
 as a test runner, and `namespace-profile-mac-large` was not recognised as a Mac.
