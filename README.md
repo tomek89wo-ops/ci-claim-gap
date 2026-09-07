@@ -184,6 +184,32 @@ result is. Run against this repository's own tests — which use
 `monkeypatch.setattr` seven times across tests with two or more patches — it
 reports nothing, because every one of them asserts on a value.
 
+`assert_not_called()` counts as looking at behaviour, not at wiring. A test
+proving that nothing happened — no signal sent, no fallback taken — is testing
+the thing itself when the function's product is a side effect. Only
+`assert_called_once_with(...)` and friends are wiring, because a test can
+satisfy those while two implementations disagree about what they return.
+
+### One reason a hit can be safe that the script cannot see
+
+`run-llama/llama_index` has `test_acquire_blocks_when_exhausted`, whose only
+assertion is `mock_sleep.assert_called_once()` — no argument, so on the face of
+it the test cannot tell a one-second wait from a microsecond one. Falsifying it
+by hand says otherwise: the test also sets
+
+```python
+mock_time.side_effect = [base, base + 2.0]
+```
+
+and a `side_effect` list is a **hidden assertion on the number of iterations**.
+Break the wait calculation and the loop asks the clock a third time, so the test
+fails on `StopIteration` before its own assertion is ever reached.
+
+That is not something a static reader can be expected to spot, and it is exactly
+why the output says leads rather than verdicts. Checking this one cost twenty
+minutes and prevented a low-quality report against a large project — which is
+the cheaper half of that trade.
+
 ## A third check: issues closed as completed whose criterion is absent
 
 ```
