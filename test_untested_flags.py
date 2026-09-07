@@ -130,3 +130,56 @@ def test_plik_z_bledem_skladni_nie_wywraca_skanera(tmp_path):
     src.mkdir()
     (src / "zly.py").write_text("def f(:\n", encoding="utf-8")
     assert uf.zbadaj(src, None) == []
+
+
+# --- korekta 20: klucz API to nie jest flaga bramkujaca zachowanie ----------
+# Zmierzone 2026-09-07 na guardrails i mem0. WSZYSTKIE trafienia byly tej
+# samej postaci:
+#     SARVAM_API_KEY, XAI_API_KEY, VLLM_API_KEY, ZERO_ENTROPY_API_KEY
+#     OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL
+#     GUARDRAILS_LOG_FILE_PATH, COLOREDLOGS_LEVEL_STYLES
+#
+# To sa POSWIADCZENIA i ENDPOINTY, nie przelaczniki zachowania. Nikt ich nie
+# ustawia w testach, bo kluczy API sie w testach nie trzyma, a adres kolektora
+# telemetrii jest konfiguracja srodowiska. Zgloszenie ich jako "flag, ktorych
+# zaden test nie dotyka" jest technicznie prawdziwe i bezuzyteczne — a przy
+# okazji topi prawdziwe trafienia w szumie.
+#
+# Kontrola pyta: "czy istnieje GALAZ KODU, w ktora zaden test nie wchodzi".
+# Brakujacy klucz API nie tworzy galezi, tylko wylacza caly integrator.
+
+def test_klucze_api_nie_sa_flagami():
+    for nazwa in ("SARVAM_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY",
+                  "GITHUB_TOKEN", "DB_PASSWORD", "AWS_SECRET_ACCESS_KEY"):
+        assert uf._poswiadczenie_lub_adres(nazwa), nazwa
+
+
+def test_endpointy_i_adresy_nie_sa_flagami():
+    for nazwa in ("OTEL_EXPORTER_OTLP_ENDPOINT", "SARVAM_API_BASE",
+                  "GUARDRAILS_LOG_FILE_PATH", "DATABASE_URL",
+                  "OTEL_EXPORTER_OTLP_PROTOCOL"):
+        assert uf._poswiadczenie_lub_adres(nazwa), nazwa
+
+
+def test_prawdziwe_flagi_zachowania_ZOSTAJA():
+    """Regresja: te, dla ktorych ta kontrola powstala. V7ST_SENTRY_ENFORCE
+    bramkowal realna galaz kodu i zaden test go nie ustawial."""
+    for nazwa in ("V7ST_SENTRY_ENFORCE", "V7ST_DATAFORGE_CRYPTO",
+                  "ENABLE_EXPERIMENTAL", "USE_LEGACY_PARSER", "DEBUG_MODE",
+                  "V7ST_ORACLE_FF_OFFSET_HOURS"):
+        assert not uf._poswiadczenie_lub_adres(nazwa), nazwa
+
+
+def test_przestrzenie_chmurowe_sa_konfiguracja_srodowiska():
+    """`AWS_ACCESS_KEY_ID` przeszlo przez regule sufiksowa przy pierwszym
+    podejsciu, bo konczy sie na `_ID`, a nie `_KEY` — dokladnie ten rodzaj
+    chybienia o wlos, ktory lapie regula prefiksowa, a sufiksowa nie moze."""
+    for nazwa in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_PROFILE",
+                  "AZURE_TENANT", "GCP_PROJECT"):
+        assert uf._poswiadczenie_lub_adres(nazwa), nazwa
+
+
+def test_prefiks_nie_polyka_flagi_o_podobnej_nazwie():
+    """`AWSOME_FEATURE` nie jest przestrzenia AWS — prefiks wymaga separatora."""
+    assert not uf._poswiadczenie_lub_adres("AWSOME_FEATURE")
+    assert not uf._poswiadczenie_lub_adres("DDOS_PROTECTION_ENABLED")

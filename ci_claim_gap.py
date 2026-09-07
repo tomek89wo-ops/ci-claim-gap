@@ -23,7 +23,7 @@ All four share one shape: a mechanism that has to be REMEMBERED rather than
 enforced. Nothing breaks when someone forgets; the signal quietly stops
 meaning anything.
 
-EIGHTEEN corrections are baked in, each from a wrong answer this tool gave
+TWENTY corrections are baked in, each from a wrong answer this tool gave
 first and each pinned by a test - see README.md for the full table. The three
 below are the oldest. Two of the newest came from a single repository: zed was
 reported as testing on Linux only, with gaps on Windows and macOS, while

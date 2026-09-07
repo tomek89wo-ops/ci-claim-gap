@@ -47,6 +47,37 @@ SYSTEMOWE = frozenset({
 })
 
 
+# Correction 20: a credential is not a behaviour flag.
+# Measured 2026-09-07 on guardrails and mem0. EVERY hit was of one shape:
+#     SARVAM_API_KEY, XAI_API_KEY, VLLM_API_KEY, ZERO_ENTROPY_API_KEY
+#     OTEL_EXPORTER_OTLP_ENDPOINT, GUARDRAILS_LOG_FILE_PATH
+#
+# Those are credentials and endpoints, not switches. Nobody sets them in tests
+# because API keys do not belong in a test suite and a collector address is
+# environment configuration. Reporting them as "flags no test ever sets" is
+# technically true and useless - and it drowns real hits in noise.
+#
+# The question this check asks is "is there a CODE BRANCH no test enters".
+# A missing API key does not create a branch; it disables an integration whole.
+POSWIADCZENIE = re.compile(
+    r"(?:^|_)(?:API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|"
+    r"AUTH|DSN|ENDPOINT|URL|URI|HOST|PORT|API_?BASE|BASE_?URL|PATH|"
+    r"PROTOCOL|STYLES)$", re.I)
+# Cloud and telemetry namespaces are environment configuration end to end -
+# region, profile, account id, collector address. `AWS_ACCESS_KEY_ID` slipped
+# through the suffix rule on the first pass because it ends in `_ID` rather
+# than `_KEY`, which is exactly the kind of near-miss a prefix rule catches
+# and a suffix rule cannot.
+PREFIKS_TELEMETRII = re.compile(
+    r"^(?:OTEL|OTLP|DATADOG|DD|SENTRY_DSN|AWS|AZURE|GCP|GOOGLE_CLOUD)_", re.I)
+
+
+def _poswiadczenie_lub_adres(nazwa: str) -> bool:
+    """True when the variable carries a secret or an address rather than
+    selecting behaviour."""
+    return bool(POSWIADCZENIE.search(nazwa) or PREFIKS_TELEMETRII.match(nazwa))
+
+
 @dataclass
 class Flaga:
     nazwa: str
@@ -108,7 +139,7 @@ def zbadaj(zrodla: Path, testy: Path | None) -> list[Flaga]:
         z = _Zbieracz(str(p))
         z.visit(drzewo)
         for nazwa, linia in z.znalezione:
-            if nazwa.upper() in SYSTEMOWE:
+            if nazwa.upper() in SYSTEMOWE or _poswiadczenie_lub_adres(nazwa):
                 continue
             flagi.setdefault(nazwa, Flaga(nazwa)).odczyty.append((str(p), linia))
 

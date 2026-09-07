@@ -59,9 +59,9 @@ tracker before you report anything to anyone.
 That warning is not boilerplate. It exists because the author reported a missing
 Windows job in a public repository after reading only `ci.yml`, and was wrong.
 
-## Eighteen corrections, each now a test
+## Twenty corrections, each now a test
 
-This tool gave a wrong answer eighteen times before it gave a useful one. Each
+This tool gave a wrong answer twenty times before it gave a useful one. Each
 mistake is pinned by a test in `test_ci_claim_gap.py`, so the suite is a record
 of what it got wrong rather than a restatement of what the code does.
 
@@ -84,6 +84,8 @@ of what it got wrong rather than a restatement of what the code does.
 | dbt-core and mlflow as swallowing test failures | Both run tests to MEASURE them — dbt's `Run integration tests and store durations` sits in a workflow called "Update Test Durations", mlflow's in a job called `set-matrix`. `|| true` is correct there: you want the timing even from a test that failed | Exclude jobs whose purpose is measurement, matched on workflow OR job name |
 | The tool CRASHING mid-report on microsoft/vscode | A step named `🧪 Run unit tests`, a cp1250 console, and `print` took the whole run down partway through a list of repositories — while `\| tail` made the shell report exit 0 | Degrade unrepresentable characters instead of ending the run. The first regression test used `capsys` and PASSED unfixed, because pytest captures stdout as UTF-8 |
 | vscode's `macOS-test` as a job that can be switched off | Six test steps gated on `inputs.*` — and `pr.yml` calls that workflow repeatedly with different subsets, together covering everything. A split into parallel jobs, not a gap | A condition on `inputs.` is a parameter set by the CALLER, which this tool does not read; `matrix.` and `needs.` stay reportable |
+| OpenHands#17085 as a closed issue whose criterion was absent | The file contains exactly `"versions": { "automation": "1.10.0" }` — but the literal text `versions.automation` never appears, because in JSON that is nesting | Resolve dotted tokens as JSON key paths, as an ADDITIONAL way to be present; the first fix returned the path result directly and then read the version number `1.10.0` as a key path |
+| Every untested-flag hit in guardrails and mem0 | All of them were `SARVAM_API_KEY`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `AWS_ACCESS_KEY_ID` — credentials and addresses, not switches. Nobody sets an API key in a test suite | Exclude credentials, endpoints and cloud namespaces. A missing key disables an integration whole; it does not create an untested branch |
 | zed's macOS gap, still, after that fix | Its runner is `namespace-profile-mac-large`. Large projects rarely use `macos-latest` | Accept `mac` followed by a separator — and *only* by a separator, or `machine` and `macro` register as Macs, which this correction's own test caught |
 
 The last three matter most, and the last one is this tool marking its own
