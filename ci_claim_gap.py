@@ -38,6 +38,7 @@ import json
 import os
 import re
 import sys
+from collections import Counter
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -64,7 +65,12 @@ URUCHAMIA_TESTY = re.compile(
     # Microsoft autogen ma zadanie `test-autogen-ext-pwsh` na windows-latest,
     # ktore wolalo `poe ... test-windows` - zgloszone jako luka platformy
     # w zadaniu, ktore ma slowo "test" nawet w nazwie.
-    r"|\b(?:poe|invoke|inv|task|nox|tox)\b[^|;&]*?\s(?:test|check)[\w.:-]*"
+    # Correction 9: `\n` must be excluded here. A negated character class
+    # matches newlines, so `Invoke-WebRequest ...` on one line and the word
+    # `checksum` three lines below joined into a single match - that is how
+    # astral-sh/uv's `Install NASM` step, which runs no test at all, was
+    # reported as a gated test step.
+    r"|\b(?:poe|invoke|inv|task|nox|tox)\b[^|;&\n]*?\s(?:test|check)[\w.:-]*"
     # Nazwa pliku zawierajaca `test`/`check`, ale poprzedzona nie-litera - inaczej
     # `latest.py` liczyloby sie jako testy, a `run_tests.py` by przepadlo.
     r"|[\w./-]*(?:^|[^A-Za-z])(?:test|check)[\w-]*\.(?:sh|bat|ps1|py)\b"
@@ -79,10 +85,13 @@ URUCHAMIA_TESTY = re.compile(
 # marker filter; both showed up as false positives in this script's first run.
 FILTRUJE = [
     (re.compile(r"--test-name-pattern[= ]\s*\S+"), "--test-name-pattern"),
-    (re.compile(r"\bpytest\b[^|;&]*?\s-k\s+\S+"), "pytest -k"),
-    (re.compile(r"\bpytest\b[^|;&]*?\s-m\s+\S+"), "pytest -m"),
+    # Correction 9 applies here too: a negated class matches newlines, so
+    # `pytest` in one command and a `-k` belonging to an entirely different
+    # command below it would join into one "filtered test run".
+    (re.compile(r"\bpytest\b[^|;&\n]*?\s-k\s+\S+"), "pytest -k"),
+    (re.compile(r"\bpytest\b[^|;&\n]*?\s-m\s+\S+"), "pytest -m"),
     (re.compile(r"--grep[= ]\s*\S+"), "--grep"),
-    (re.compile(r"\bgo\s+test\b[^|;&]*?\s-run\s+\S+"), "go test -run"),
+    (re.compile(r"\bgo\s+test\b[^|;&\n]*?\s-run\s+\S+"), "go test -run"),
     (re.compile(r"--filter[= ]\s*\S+"), "--filter"),
 ]
 
@@ -151,6 +160,29 @@ WARUNEK_KROKU = re.compile(r"^\s*if:\s*(\S.*)$", re.M)
 # and leave it on for another, which is the whole shape this check looks for.
 NIE_BRAMKUJE = re.compile(r"^\W*(?:always|success|!\s*cancelled)\s*\(\s*\)\W*$")
 
+# Correction 8c, measured across eight repositories on 2026-09-07: the dominant
+# false positive is a COMPLEMENTARY PAIR. pydantic and psf/black both run
+#
+#     - name: Run pytest               if: '!startsWith(matrix.python-version, "pypy")'
+#     - name: Run pytest (no coverage)  if: startsWith(matrix.python-version, "pypy")
+#
+# Between them those cover every case: the suite always runs, just under a
+# different command. Calling that "a step that can be switched off" is false.
+#
+# Detection is by NEGATION, not by count. "There are two of them, so they
+# probably complement each other" would hide real gaps in any job that gates
+# two different test steps for two different reasons.
+_ZBEDNE = str.maketrans("", "", " '\"`${}()")
+
+
+def _rdzen_warunku(w: str) -> str:
+    """Condition stripped to a comparable core: quoting, spacing, `${{ }}` and
+    a leading negation removed, so `!X` and `X` collapse onto each other."""
+    r = w.translate(_ZBEDNE).lower()
+    while r.startswith(("!", "not")):
+        r = r[3:] if r.startswith("not") else r[1:]
+    return r
+
 
 def _bramkowane(tresc: str) -> list[str]:
     """Return the test steps that are gated behind an `if:` condition.
@@ -166,7 +198,7 @@ def _bramkowane(tresc: str) -> list[str]:
     from the nine false hits this check produced on its first run.
     """
     granice = [m.start() for m in POCZATEK_KROKU.finditer(tresc)]
-    out: list[str] = []
+    kandydaci: list[tuple[str, str]] = []      # (rdzen warunku, opis kroku)
     for i, poz in enumerate(granice):
         koniec = granice[i + 1] if i + 1 < len(granice) else len(tresc)
         krok = tresc[poz:koniec]
@@ -175,8 +207,13 @@ def _bramkowane(tresc: str) -> list[str]:
         m = WARUNEK_KROKU.search(krok)
         if not m or NIE_BRAMKUJE.match(m.group(1).strip()):
             continue
-        out.append(" ".join(krok[:m.end() + 60].split())[:160])
-    return out
+        kandydaci.append((_rdzen_warunku(m.group(1)),
+                          " ".join(krok[:m.end() + 60].split())[:160]))
+
+    # Drop every condition that appears more than once after negation is
+    # stripped: that is `X` sitting next to `!X`, which together always run.
+    ile = Counter(r for r, _ in kandydaci)
+    return [opis for rdzen, opis in kandydaci if ile[rdzen] == 1]
 
 
 def _kroki_testowe_w(tresc: str) -> tuple[list[str], list[tuple[str, str]]]:

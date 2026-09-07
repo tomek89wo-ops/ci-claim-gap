@@ -366,3 +366,92 @@ def test_prawdziwa_bramka_nadal_lapana():
     blok = ("      - name: Test\n        if: matrix.full_checks\n"
             "        run: npm test\n")
     assert cg._bramkowane(blok)
+
+
+# --- korekta 8c: pary komplementarne warunkow -------------------------------
+# Zmierzone 2026-09-07 na osmiu repozytoriach: kontrola bramek zglosila
+# pydantic, psf/black, fastapi, ruff i uv. Dominujaca klasa falszywek to PARA
+# krokow o warunkach bedacych swoimi negacjami:
+#
+#     - name: Run pytest              if: '!startsWith(matrix.python-version, "pypy")'
+#     - name: Run pytest (no coverage) if: startsWith(matrix.python-version, "pypy")
+#
+# Razem pokrywaja 100% przypadkow — testy uruchamiaja sie ZAWSZE, tylko innym
+# poleceniem. Zgloszenie tego jako "krok da sie wylaczyc" jest falszem.
+
+PARA_KOMPLEMENTARNA = """
+      - name: Run pytest
+        if: '!startsWith(matrix.python-version, ''pypy'')'
+        run: make test
+      - name: Run pytest (no coverage)
+        if: startsWith(matrix.python-version, 'pypy')
+        run: uv run pytest
+"""
+
+POJEDYNCZA_BRAMKA = """
+      - name: Test
+        if: matrix.full_checks
+        run: npm test
+"""
+
+
+def test_para_komplementarna_NIE_jest_luka():
+    """pydantic i psf/black: `if X` obok `if !X` to pelne pokrycie."""
+    assert not cg._bramkowane(PARA_KOMPLEMENTARNA), (
+        "dwa kroki o przeciwnych warunkach pokrywaja wszystkie przypadki")
+
+
+def test_pojedyncza_bramka_nadal_jest_luka():
+    """OpenHands#17148 nie ma pary — `if: matrix.full_checks` i nic wiecej."""
+    assert cg._bramkowane(POJEDYNCZA_BRAMKA)
+
+
+def test_para_o_ROZNYCH_warunkach_nadal_zglaszana():
+    """Dwa bramkowane kroki to jeszcze nie para. Musza byc swoimi negacjami —
+    inaczej heurystyka 'jest ich dwa, wiec pewnie sie uzupelniaja' ukrywalaby
+    prawdziwe luki."""
+    blok = ("      - name: Test unit\n        if: matrix.full_checks\n        run: npm test\n"
+            "      - name: Test e2e\n        if: matrix.slow\n        run: npm test:e2e\n")
+    assert len(cg._bramkowane(blok)) == 2
+
+
+# --- korekta 9: wzorzec przeskakiwal znak nowej linii ------------------------
+# astral-sh/uv, krok `- name: "Install NASM"` w build-release-binaries.yml —
+# nie ma w nim zadnego testu. Zostal zlapany, bo wzorzec task-runnera
+#     \b(?:poe|invoke|inv|task|nox|tox)\b[^|;&]*?\s(?:test|check)
+# uzywa NEGOWANEJ klasy znakow, a ta obejmuje `\n`. Skrypt PowerShella zawiera
+# `Invoke-WebRequest ...` w jednej linii i `throw 'NASM installer checksum
+# mismatch'` trzy linie nizej — dopasowanie przeskoczylo przez caly blok.
+#
+# Ta sama wada byla w KAZDYM wzorcu filtra (`pytest -k`, `pytest -m`,
+# `go test -run`), wiec `pytest` w jednej linii i `-k` w zupelnie innej
+# komendzie liczylyby sie jako filtr.
+
+NASM = """      - name: "Install NASM"
+        if: contains(matrix.platform.target, 'x86')
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "nasm-installer-x64.exe"
+          Invoke-WebRequest "https://www.nasm.us/pub/nasm/x.exe" -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $sha256) {
+            throw 'NASM installer checksum mismatch'
+          }
+"""
+
+
+def test_invoke_w_jednej_linii_i_check_w_innej_to_NIE_test():
+    kroki, _ = cg._kroki_testowe_w(NASM)
+    assert not kroki, f"blednie uznane za krok testowy: {kroki}"
+    assert not cg._bramkowane(NASM)
+
+
+def test_task_runner_w_JEDNEJ_linii_nadal_dziala():
+    """Regresja korekty 6: `poe ... test-windows` musi przezyc zawezenie."""
+    kroki, _ = cg._kroki_testowe_w("run: poe --directory ./python/packages test-windows")
+    assert kroki
+
+
+def test_filtr_nie_sklada_sie_z_dwoch_roznych_linii():
+    """`pytest` w jednej komendzie i `-k` w innej to nie jest filtr."""
+    blok = "        run: |\n          pytest tests/\n          grep -k foo bar\n"
+    _, filtry = cg._kroki_testowe_w(blok)
+    assert not any(e == "pytest -k" for e, _ in filtry), filtry

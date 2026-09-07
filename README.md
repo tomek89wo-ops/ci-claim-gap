@@ -47,9 +47,9 @@ tracker before you report anything to anyone.
 That warning is not boilerplate. It exists because the author reported a missing
 Windows job in a public repository after reading only `ci.yml`, and was wrong.
 
-## Nine corrections, each now a test
+## Ten corrections, each now a test
 
-This tool gave a wrong answer nine times before it gave a useful one. Each
+This tool gave a wrong answer ten times before it gave a useful one. Each
 mistake is pinned by a test in `test_ci_claim_gap.py`, so the suite is a record
 of what it got wrong rather than a restatement of what the code does.
 
@@ -63,6 +63,7 @@ of what it got wrong rather than a restatement of what the code does.
 | microsoft/autogen as untested on Windows, in a job named `test-autogen-ext-pwsh` | Its step is `poe ... test-windows` | Recognise task runners with named tasks |
 | vLLM as untested on macOS | Its step is `- name: Smoke test vllm serve`, running `vllm serve` | Read the step NAME, not only the command — but accept `test` there, never `check`, or every `Check out repository` becomes a test suite |
 | browser-use as untested on Windows and macOS | `- name: Set up venv and test for OS/Python versions`, on a three-OS matrix | Same fix; two repositories hit the same blind spot on the same day |
+| astral-sh/uv's `Install NASM` step, which runs no test at all, as a gated test step | The task-runner pattern used a negated character class, which matches newlines: `Invoke-WebRequest` on one line joined the word `checksum` three lines below | Exclude the newline from every such class — the same flaw was in all three filter patterns |
 | Ten gated steps in OpenHands, of which one was real | `if: always()` is the *opposite* of a gate, and `Upload test artifacts` handles a test's output rather than running it | A gate counts only when the step's COMMAND runs tests, and never for `always()` / `success()` / `!cancelled()` |
 
 The last three matter most, and the last one is this tool marking its own
