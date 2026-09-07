@@ -1,7 +1,9 @@
 name: "CI claim gap"
 description: >-
   Report the gap between what this repository's CI appears to cover and what it
-  runs: platforms never tested on, test lanes filtered by tag, tests that assert
+  runs: platforms never tested on, test lanes filtered by tag, a job's only test
+  step gated behind an `if:` that can switch it off, test steps whose failure is
+  swallowed by `|| true`, environment flags no test ever sets, tests that assert
   wiring instead of behaviour, and issues closed as completed whose stated
   criterion is absent from the code.
 author: "Tomasz Wadowski"
