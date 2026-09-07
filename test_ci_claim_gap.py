@@ -692,3 +692,36 @@ def test_continue_on_error_false_nie_polyka():
     blok = ("      - name: Test\n        continue-on-error: false\n"
             "        run: pytest\n")
     assert not cg._polykany_blad(blok)
+
+
+# --- korekta 16: zadanie ZBIERA DANE o testach, nie weryfikuje --------------
+# dbt-labs/dbt-core, workflow "Update Test Durations":
+#     - name: "Run integration tests and store durations"
+#       run: ... || true
+# mlflow ma to samo w `cross-version-tests.yml :: set-matrix`.
+#
+# Oba URUCHAMIAJA testy, ale po to, zeby zmierzyc czasy albo zbudowac macierz —
+# nie po to, zeby cokolwiek zweryfikowac. `|| true` jest tam SLUSZNE: czasy
+# chcemy takze z testu, ktory padl. Zgloszenie tego jako "polkniety blad"
+# myli cel zadania z jego trescia.
+
+def test_zadanie_mierzace_czasy_nie_jest_polknietym_bledem():
+    """Pierwsza wersja tego testu wymieniala tu `cross-version-tests.yml`
+    i padla slusznie: ta nazwa pliku nie niesie zadnego sygnalu o zbieraniu
+    danych — niesie go dopiero nazwa ZADANIA (`set-matrix`), sprawdzana
+    w tescie nizej. Poprawiony zostal test, nie kod."""
+    for plik in ("update-test-durations.yml", "benchmark.yml",
+                 "collect-durations.yaml", "generate-timings.yml"):
+        assert cg._zbiera_dane(plik), plik
+
+
+def test_zwykle_workflow_testowe_nie_sa_zbieraniem_danych():
+    for plik in ("ci.yml", "test.yml", "tests.yaml", "test-windows.yml"):
+        assert not cg._zbiera_dane(plik), plik
+
+
+def test_nazwa_zadania_tez_sie_liczy():
+    """mlflow trzyma to w zadaniu `set-matrix`, nie w nazwie pliku."""
+    assert cg._zbiera_dane("ci.yml", "set-matrix")
+    assert cg._zbiera_dane("ci.yml", "generate-durations")
+    assert not cg._zbiera_dane("ci.yml", "test-and-build")

@@ -23,7 +23,7 @@ All four share one shape: a mechanism that has to be REMEMBERED rather than
 enforced. Nothing breaks when someone forgets; the signal quietly stops
 meaning anything.
 
-FIFTEEN corrections are baked in, each from a wrong answer this tool gave
+SIXTEEN corrections are baked in, each from a wrong answer this tool gave
 first and each pinned by a test - see README.md for the full table. The three
 below are the oldest. Two of the newest came from a single repository: zed was
 reported as testing on Linux only, with gaps on Windows and macOS, while
@@ -265,6 +265,21 @@ POLYKA_BLAD = re.compile(r"\|\|\s*(?:true|:|echo\b)|^\s*continue-on-error:\s*tru
                          re.M | re.I)
 
 
+# Correction 16: some jobs run tests to MEASURE them, not to verify anything.
+# dbt-labs/dbt-core has `- name: "Run integration tests and store durations"`
+# with `|| true`, inside a workflow called "Update Test Durations"; mlflow does
+# the same in `cross-version-tests.yml :: set-matrix`. Swallowing a failure is
+# correct there - you want the timing even from a test that failed. Reporting
+# it confuses the job's PURPOSE with its content.
+ZBIERA_DANE = re.compile(r"\b(?:duration|durations|benchmark|set-matrix|"
+                         r"matrix|collect|generate|profile|timing)\b", re.I)
+
+
+def _zbiera_dane(plik: str, zadanie: str = "") -> bool:
+    """True when this workflow or job exists to measure tests, not run them."""
+    return bool(ZBIERA_DANE.search(plik) or (zadanie and ZBIERA_DANE.search(zadanie)))
+
+
 def _polykany_blad(tresc: str) -> bool:
     """True when a step runs tests and cannot fail the job."""
     granice = [m.start() for m in POCZATEK_KROKU.finditer(tresc)]
@@ -459,7 +474,8 @@ def zbadaj(repo: str, token: str | None) -> dict:
         "bramkowane": bramkowane,
         "polykane": [{"plik": z.plik, "zadanie": z.nazwa,
                       "systemy": z.systemy}
-                     for z in zadania if z.polyka_blad],
+                     for z in zadania if z.polyka_blad
+                     and not _zbiera_dane(z.plik, z.nazwa)],
     }
 
 
